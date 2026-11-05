@@ -11,7 +11,7 @@ interface ProductionPinModalProps {
 
 export const ProductionPinModal: React.FC<ProductionPinModalProps> = ({ isOpen, onClose }) => {
   useLockBodyScroll(isOpen);
-  const [currentPin, setCurrentPin] = useState<string>('5678');
+  const [currentPin, setCurrentPin] = useState<string>('1234');
   const [newPin, setNewPin] = useState<string>('');
   const [confirmPin, setConfirmPin] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -76,7 +76,7 @@ export const ProductionPinModal: React.FC<ProductionPinModalProps> = ({ isOpen, 
           actor: 'Super Admin',
           action: 'PRODUCTION_PIN_CHANGED',
           entity_type: 'SECURITY',
-          entity_id: 'PIN',
+          entity_id: null,
           details: { pin: newPin, updated_at: new Date().toISOString() },
         },
       ]);

@@ -172,6 +172,8 @@ export const SettingsView: React.FC = () => {
           <button
             type="button"
             onClick={() => {
+              sessionStorage.removeItem('pulari_production_unlocked');
+              sessionStorage.removeItem('pulari_production_unlocked_pin');
               sessionStorage.removeItem('epso_production_unlocked');
               window.location.reload();
             }}

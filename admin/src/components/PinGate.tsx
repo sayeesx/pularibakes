@@ -8,7 +8,7 @@ export const PinGate: React.FC = () => {
   const { loginWithPin, isLoading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
-  const [digits, setDigits] = useState<string[]>(['', '', '', '', '']);
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [shake, setShake] = useState<boolean>(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -24,7 +24,7 @@ export const PinGate: React.FC = () => {
     setDigits(updated);
     setErrorMsg('');
 
-    if (char && index < 4) {
+    if (char && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 
@@ -42,7 +42,7 @@ export const PinGate: React.FC = () => {
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 5);
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (!pasted) return;
 
     const updated = [...digits];
@@ -52,7 +52,7 @@ export const PinGate: React.FC = () => {
     setDigits(updated);
     setErrorMsg('');
 
-    if (pasted.length === 5) {
+    if (pasted.length === 6) {
       submitPin(pasted);
     } else {
       inputRefs.current[pasted.length]?.focus();
@@ -65,7 +65,7 @@ export const PinGate: React.FC = () => {
       setErrorMsg(language === 'ml' ? 'തെറ്റായ പിൻ' : 'Incorrect PIN');
       setShake(true);
       setTimeout(() => setShake(false), 500);
-      setDigits(['', '', '', '', '']);
+      setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     }
   };
@@ -118,11 +118,11 @@ export const PinGate: React.FC = () => {
           {language === 'ml' ? 'അഡ്മിൻ പിൻ നൽകുക' : 'Enter Admin PIN'}
         </h1>
         <p className="text-xs text-stone-500 dark:text-stone-400 text-center mb-6">
-          {language === 'ml' ? 'തുടരുന്നതിനായി നിങ്ങളുടെ 5 അക്ക പിൻ അടിക്കുക' : 'Enter your 5-digit PIN to access console'}
+          {language === 'ml' ? 'തുടരുന്നതിനായി നിങ്ങളുടെ 6 അക്ക പിൻ അടിക്കുക' : 'Enter your 6-digit PIN to access console'}
         </p>
 
-        {/* 5 Individual OTP Boxes */}
-        <div className="flex justify-center gap-2.5 sm:gap-3 mb-6 w-full">
+        {/* 6 Individual OTP Boxes */}
+        <div className="flex justify-center gap-2 sm:gap-2.5 mb-6 w-full">
           {digits.map((digit, index) => (
             <input
               key={index}
@@ -135,7 +135,7 @@ export const PinGate: React.FC = () => {
               onChange={(e) => handleDigitChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               onPaste={handlePaste}
-              className={`w-11 h-14 sm:w-13 sm:h-16 text-center text-xl sm:text-2xl font-bold rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1C1819] text-stone-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pulari-gold transition-all ${
+              className={`w-10 h-13 sm:w-12 sm:h-15 text-center text-lg sm:text-xl font-bold rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1C1819] text-stone-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pulari-gold transition-all ${
                 errorMsg ? 'border-red-500 ring-1 ring-red-500' : ''
               }`}
             />

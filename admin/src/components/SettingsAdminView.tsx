@@ -13,7 +13,7 @@ import {
   FiSave,
   FiKey,
 } from 'react-icons/fi';
-import { supabase, invalidateAdminCache, resetAllStocksToZero } from '../services/supabase';
+import { supabase, invalidateAdminCache, resetAllStocksToZero, verifyAdminPin } from '../services/supabase';
 import {
   Product,
   Ingredient,
@@ -25,6 +25,7 @@ import {
 import { useFeedback } from '../context/FeedbackContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { FiGlobe, FiSun, FiMoon } from 'react-icons/fi';
 
 interface SettingsAdminViewProps {
@@ -45,10 +46,21 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
   const { showToast } = useFeedback();
   const { language, setLanguage, t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
+  const { changePin } = useAuth();
+
   // ==========================================
-  // 1. PRODUCTION PIN STATE
+  // 1. ADMIN PIN STATE (6 Digits - Default: 123456)
   // ==========================================
-  const [currentPin, setCurrentPin] = useState<string>('5678');
+  const [oldAdminPin, setOldAdminPin] = useState<string>('');
+  const [newAdminPin, setNewAdminPin] = useState<string>('');
+  const [confirmAdminPin, setConfirmAdminPin] = useState<string>('');
+  const [adminPinLoading, setAdminPinLoading] = useState<boolean>(false);
+  const [adminPinMessage, setAdminPinMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // ==========================================
+  // 2. PANTRY / PRODUCTION PIN STATE (4 Digits - Default: 1234)
+  // ==========================================
+  const [currentPin, setCurrentPin] = useState<string>('1234');
   const [showCurrentPin, setShowCurrentPin] = useState<boolean>(false);
   const [newPin, setNewPin] = useState<string>('');
   const [confirmPin, setConfirmPin] = useState<string>('');
@@ -137,7 +149,65 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
     })();
   }, []);
 
-  // Update Production PIN
+  // Update Admin PIN (6 Digits)
+  const handleUpdateAdminPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminPinMessage(null);
+
+    if (!oldAdminPin.trim()) {
+      setAdminPinMessage({
+        type: 'error',
+        text: 'നിലവിലെ അഡ്മിൻ പിൻ നൽകുക (Please enter current Admin PIN)',
+      });
+      return;
+    }
+
+    if (!/^\d{6}$/.test(newAdminPin)) {
+      setAdminPinMessage({
+        type: 'error',
+        text: 'പുതിയ അഡ്മിൻ പിൻ കൃത്യമായി 6 അക്കങ്ങൾ (0-9) ആയിരിക്കണം (Admin PIN must be exactly 6 digits)',
+      });
+      return;
+    }
+
+    if (newAdminPin !== confirmAdminPin) {
+      setAdminPinMessage({
+        type: 'error',
+        text: 'നൽകിയ രണ്ട് അഡ്മിൻ പിന്നുകളും പൊരുത്തപ്പെടുന്നില്ല (Admin PINs do not match)',
+      });
+      return;
+    }
+
+    setAdminPinLoading(true);
+    try {
+      const res = await changePin(oldAdminPin.trim(), newAdminPin.trim());
+      if (res.success) {
+        setOldAdminPin('');
+        setNewAdminPin('');
+        setConfirmAdminPin('');
+        setAdminPinMessage({
+          type: 'success',
+          text: 'അഡ്മിൻ പിൻ വിജയകരമായി മാറ്റി! (Admin PIN updated successfully to 6 digits)',
+        });
+        showToast('അഡ്മിൻ പിൻ വിജയകരമായി മാറ്റി!', 'success');
+        setTimeout(() => setAdminPinMessage(null), 4000);
+      } else {
+        setAdminPinMessage({
+          type: 'error',
+          text: res.error || 'പിൻ അപ്ഡേറ്റ് ചെയ്യുന്നതിൽ പരാജയപ്പെട്ടു (Failed to update PIN)',
+        });
+      }
+    } catch (err: any) {
+      setAdminPinMessage({
+        type: 'error',
+        text: err?.message || 'Error updating Admin PIN',
+      });
+    } finally {
+      setAdminPinLoading(false);
+    }
+  };
+
+  // Update Production PIN (4 Digits)
   const handleUpdatePin = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinMessage(null);
@@ -166,7 +236,7 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
           actor: 'Super Admin',
           action: 'PRODUCTION_PIN_CHANGED',
           entity_type: 'SECURITY',
-          entity_id: 'PIN',
+          entity_id: null,
           details: { pin: newPin, updated_at: new Date().toISOString() },
         },
       ]);
@@ -228,12 +298,22 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
     e.preventDefault();
     setResetError('');
 
-    // PIN verification: strictly verify 5-digit Admin PIN 98096
+    // PIN verification: verify 6-digit Admin PIN
     const cleanPin = enteredPin.trim();
-    const isPinCorrect = cleanPin === '98096';
+    const activeAdminPin = localStorage.getItem('pulari_admin_pin') || '123456';
+    let isPinCorrect = cleanPin === activeAdminPin;
 
     if (!isPinCorrect) {
-      setResetError('നൽകിയ അഡ്മിൻ പിൻ തെറ്റാണ്! (Invalid Admin PIN. Enter 98096)');
+      try {
+        const res = await verifyAdminPin(cleanPin);
+        if (res.success) isPinCorrect = true;
+      } catch {
+        // offline fallback
+      }
+    }
+
+    if (!isPinCorrect) {
+      setResetError('നൽകിയ അഡ്മിൻ പിൻ തെറ്റാണ്! (Invalid Admin PIN. Enter 123456)');
       return;
     }
 
@@ -506,7 +586,120 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
         </div>
 
         {/* ============================================================ */}
-        {/* CARD 1: PRODUCTION PIN MANAGEMENT */}
+        {/* CARD 1A: ADMIN LOGIN PIN MANAGEMENT (6 DIGITS) */}
+        {/* ============================================================ */}
+        <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1B1B] border border-stone-200 dark:border-[#2E2828] shadow-apple-card space-y-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-epso-red/10 text-epso-red dark:text-amber-400 flex items-center justify-center font-black">
+                <FiShield className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-stone-900 dark:text-white font-malayalam">
+                  അഡ്മിൻ ലോഗിൻ പിൻ (Admin PIN - 6 Digits)
+                </h2>
+                <p className="text-xs text-stone-400 font-malayalam">
+                  അഡ്മിൻ പാനൽ സുരക്ഷിതമായി ലോഗിൻ ചെയ്യുന്നതിനുള്ള 6-അക്ക മാസ്റ്റർ പിൻ മാറ്റുക (ഡിഫോൾട്ട്: 123456)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-stone-100 dark:bg-[#282323] border border-stone-200 dark:border-[#332A2A]">
+              <span className="text-[10px] uppercase font-bold text-stone-400">നീളം:</span>
+              <span className="font-mono font-black text-xs text-stone-700 dark:text-stone-300">
+                6 അക്കങ്ങൾ
+              </span>
+            </div>
+          </div>
+
+          {/* Form to update Admin PIN */}
+          <form onSubmit={handleUpdateAdminPin} className="space-y-4 pt-2 border-t border-stone-100 dark:border-[#282323]">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam mb-1">
+                  നിലവിലെ പിൻ (Old PIN) *
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  required
+                  value={oldAdminPin}
+                  onChange={(e) => setOldAdminPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="6 digits"
+                  className="w-full p-2.5 rounded-xl border border-stone-200 dark:border-[#2E2828] bg-stone-50 dark:bg-[#141212] text-stone-900 dark:text-white font-mono font-bold text-center text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-epso-red/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam mb-1">
+                  പുതിയ പിൻ (New PIN) *
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  required
+                  value={newAdminPin}
+                  onChange={(e) => setNewAdminPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="6 digits"
+                  className="w-full p-2.5 rounded-xl border border-stone-200 dark:border-[#2E2828] bg-stone-50 dark:bg-[#141212] text-stone-900 dark:text-white font-mono font-bold text-center text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-epso-red/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam mb-1">
+                  സ്ഥിരീകരിക്കുക (Confirm) *
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  required
+                  value={confirmAdminPin}
+                  onChange={(e) => setConfirmAdminPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="6 digits"
+                  className="w-full p-2.5 rounded-xl border border-stone-200 dark:border-[#2E2828] bg-stone-50 dark:bg-[#141212] text-stone-900 dark:text-white font-mono font-bold text-center text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-epso-red/30"
+                />
+              </div>
+            </div>
+
+            {adminPinMessage && (
+              <div
+                className={`p-3 rounded-xl text-xs font-bold font-malayalam flex items-center gap-2 ${
+                  adminPinMessage.type === 'success'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                    : 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                }`}
+              >
+                {adminPinMessage.type === 'success' ? (
+                  <FiCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <FiAlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                )}
+                <span>{adminPinMessage.text}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={adminPinLoading || !oldAdminPin || newAdminPin.length !== 6 || confirmAdminPin.length !== 6}
+              className="w-full py-2.5 rounded-xl bg-epso-red hover:bg-epso-red-hover dark:bg-amber-500 dark:hover:bg-amber-600 text-white dark:text-stone-950 font-bold text-xs shadow-sm press-apple transition-colors font-malayalam flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+            >
+              {adminPinLoading ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white dark:border-stone-900 border-t-transparent rounded-full animate-spin" />
+                  <span>അപ്ഡേറ്റ് ചെയ്യുന്നു...</span>
+                </>
+              ) : (
+                <>
+                  <FiKey className="w-3.5 h-3.5" />
+                  <span>അഡ്മിൻ പിൻ മാറ്റുക (Update Admin PIN)</span>
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        {/* ============================================================ */}
+        {/* CARD 1B: PANTRY / PRODUCTION PIN MANAGEMENT */}
         {/* ============================================================ */}
         <div className="p-6 rounded-3xl bg-white dark:bg-[#1E1B1B] border border-stone-200 dark:border-[#2E2828] shadow-apple-card space-y-5">
           <div className="flex items-start justify-between">
@@ -519,7 +712,7 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
                   PWA പാൻട്രി / പ്രൊഡക്ഷൻ പിൻ (Pantry PIN)
                 </h2>
                 <p className="text-xs text-stone-400 font-malayalam">
-                  അടുക്കള ജീവനക്കാർക്ക് PWA പാൻട്രി മാനേജ്‌മെന്റിനായി ആവശ്യമായ 4-അക്ക സെക്യൂരിറ്റി കോഡ്
+                  അടുക്കള ജീവനക്കാർക്ക് PWA പാൻട്രി മാനേജ്‌മെന്റിനായി ആവശ്യമായ 4-അക്ക സെക്യൂരിറ്റി കോഡ് (ഡിഫോൾട്ട്: 1234)
                 </p>
               </div>
             </div>
@@ -970,16 +1163,16 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
 
                 <div>
                   <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
-                    അഡ്മിൻ പിൻ നൽകുക (Admin PIN: 98096) *
+                    അഡ്മിൻ പിൻ നൽകുക (6-digit Admin PIN) *
                   </label>
                   <input
                     type="password"
-                    maxLength={5}
+                    maxLength={6}
                     required
                     autoFocus
                     value={enteredPin}
                     onChange={(e) => setEnteredPin(e.target.value.replace(/\D/g, ''))}
-                    placeholder="•••••"
+                    placeholder="••••••"
                     className="w-full p-3 rounded-xl border border-stone-200 dark:border-[#2E2828] bg-stone-50 dark:bg-[#141212] text-stone-900 dark:text-white font-mono font-black text-center text-lg tracking-widest focus:outline-none"
                   />
                 </div>
@@ -1002,7 +1195,7 @@ export const SettingsAdminView: React.FC<SettingsAdminViewProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={resetLoading || enteredPin.length !== 5}
+                    disabled={resetLoading || enteredPin.length !== 6}
                     className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-sm press-apple flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                   >
                     {resetLoading ? (

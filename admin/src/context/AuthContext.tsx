@@ -29,19 +29,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const cleanPin = pin.trim();
 
-      // Explicitly reject and permanently block obsolete/old password 65188
-      if (cleanPin === '65188') {
+      // Explicitly reject and permanently block obsolete/old passwords
+      if (cleanPin === '65188' || cleanPin === '98096') {
         sessionStorage.removeItem('pulari_admin_session');
         setIsAuthenticated(false);
         return { success: false, error: 'തെറ്റായ പിൻ (Incorrect PIN)' };
       }
 
-      // Strictly enforce Admin PIN 98096
-      if (cleanPin !== '98096') {
-        return { success: false, error: 'തെറ്റായ പിൻ (Incorrect PIN)' };
-      }
-
-      // Verify Admin PIN 98096
+      // Verify Admin PIN with Supabase RPC
       const res = await verifyAdminPin(cleanPin);
       if (res.success) {
         sessionStorage.setItem('pulari_admin_session', res.session_token || 'active_token');
@@ -51,7 +46,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { success: false, error: res.error || 'തെറ്റായ പിൻ (Incorrect PIN)' };
     } catch (err: any) {
-      if (pin.trim() === '98096') {
+      const activeAdminPin = localStorage.getItem('pulari_admin_pin') || '123456';
+      if (pin.trim() === activeAdminPin) {
         sessionStorage.setItem('pulari_admin_session', 'active_token');
         setIsAuthenticated(true);
         return { success: true };
@@ -63,7 +59,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const changePinHandler = async (oldPin: string, newPin: string) => {
-    return await changeAdminPin(oldPin, newPin);
+    const res = await changeAdminPin(oldPin, newPin);
+    if (res.success) {
+      localStorage.setItem('pulari_admin_pin', newPin.trim());
+    }
+    return res;
   };
 
   const logout = () => {

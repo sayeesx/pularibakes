@@ -17,7 +17,7 @@ export const ProductionPinGate: React.FC<ProductionPinGateProps> = ({ onUnlock }
   const [shake, setShake] = useState<boolean>(false);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [targetPin, setTargetPin] = useState<string>(() => {
-    return localStorage.getItem('pulari_production_pin') || '5678';
+    return localStorage.getItem('pulari_production_pin') || '1234';
   });
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -137,7 +137,7 @@ export const ProductionPinGate: React.FC<ProductionPinGateProps> = ({ onUnlock }
     }
 
     if (!authoritativePin) {
-      authoritativePin = localStorage.getItem('pulari_production_pin') || '5678';
+      authoritativePin = localStorage.getItem('pulari_production_pin') || '1234';
     }
 
     // 2. Validate strictly against the latest authoritative PIN
