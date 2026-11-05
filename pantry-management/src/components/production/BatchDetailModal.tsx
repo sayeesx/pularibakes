@@ -40,16 +40,15 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
 }) => {
   const { language } = useLanguage();
 
-  if (!batch) return null;
-
   // Filter packing records specifically for this batch
   const batchPackings = useMemo(() => {
+    if (!batch) return [];
     return packingRecords.filter(
       (p) =>
         (p.productionRunId && p.productionRunId === batch.id) ||
         Boolean(p.notes && p.notes.includes(batch.runNumber))
     );
-  }, [packingRecords, batch.id, batch.runNumber]);
+  }, [packingRecords, batch?.id, batch?.runNumber]);
 
   // Group packings by packet size
   const groupedPackings = useMemo(() => {
@@ -78,7 +77,7 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
   );
 
   // Calculate batch production ratio for shared daily basic ingredients
-  const batchWeightKg = Number(batch.actualQuantity) || Number(batch.plannedQuantity) || 0;
+  const batchWeightKg = Number(batch?.actualQuantity) || Number(batch?.plannedQuantity) || 0;
   const effectiveTotalDayKg = Math.max(batchWeightKg, Number(totalDailyProductionKg) || 0);
   const batchRatio = effectiveTotalDayKg > 0 ? Math.min(1, batchWeightKg / effectiveTotalDayKg) : 1;
 
@@ -110,7 +109,7 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
 
   // Ingredients consumed list (with fallback to recipe if empty)
   const consumedIngredientsList = useMemo(() => {
-    if (batch.ingredientsConsumed && batch.ingredientsConsumed.length > 0) {
+    if (batch?.ingredientsConsumed && batch.ingredientsConsumed.length > 0) {
       return batch.ingredientsConsumed;
     }
     if (recipe && recipe.ingredients && recipe.ingredients.length > 0) {
@@ -125,7 +124,9 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
       }));
     }
     return [];
-  }, [batch.ingredientsConsumed, recipe, batchWeightKg]);
+  }, [batch?.ingredientsConsumed, recipe, batchWeightKg]);
+
+  if (!isOpen || !batch) return null;
 
   return (
     <Modal

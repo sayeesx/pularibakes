@@ -15,10 +15,10 @@ import {
   SpecialMixture,
   SpecialMixtureBatch,
   SpecialMixtureRecipe,
-  SpecialMixtureConsumption,
-  ProductionMixtureConsumption,
   UnitType,
 } from '../types';
+
+export type IPulariRepository = IEpsoRepository;
 
 export interface IEpsoRepository {
   // Products Catalogue

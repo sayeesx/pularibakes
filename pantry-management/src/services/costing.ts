@@ -1,4 +1,4 @@
-import { Recipe, RecipeIngredient, BatchIngredientUsage, Ingredient } from '../types';
+import { Recipe, RecipeIngredient, BatchIngredientUsage } from '../types';
 
 /**
  * Rounds a number to a specified number of decimal places without floating-point drift.

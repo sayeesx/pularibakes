@@ -611,11 +611,11 @@ export const ProductionPage: React.FC = () => {
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
-      {/* Sleek header bar with prominent Epso logo */}
+      {/* Sleek header bar with prominent Pulari Bakes logo */}
       <div className="flex items-center justify-between gap-2 pt-1 flex-wrap sm:flex-nowrap">
         <div className="flex items-center">
           <img
-            src={isDark ? '/epso-logo-dark.png' : '/epso-logo-light.png'}
+            src="/pulari-logo.jpg"
             alt="Pulari Bakes Logo"
             className="h-[52px] sm:h-[64px] w-auto object-contain transition-opacity duration-200 select-none"
           />

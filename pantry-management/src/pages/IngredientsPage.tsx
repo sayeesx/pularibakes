@@ -3,7 +3,6 @@ import { useApp } from '../context/AppContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { GridCardSkeleton } from '../components/ui/BatchCardSkeleton';
 import { Ingredient } from '../types';
 import {
@@ -125,7 +124,7 @@ export const IngredientsPage: React.FC = () => {
                     <div className="flex items-center gap-2.5 flex-1 min-w-0">
                       <div className="w-10 h-10 rounded-full bg-stone-100 dark:bg-[#221E1E] border border-stone-200/80 dark:border-[#2C2727] flex items-center justify-center shrink-0 shadow-2xs">
                         <img
-                          src="/epso-icon-grey.png"
+                          src="/pulari-logo.jpg"
                           alt=""
                           className="w-6 h-6 object-contain opacity-50 dark:opacity-40 select-none pointer-events-none"
                         />

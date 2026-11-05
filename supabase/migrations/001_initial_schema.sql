@@ -733,6 +733,12 @@ BEGIN
                 CONTINUE;
             END IF;
 
+            -- Validate sufficient stock before deducting
+            IF v_curr_ing_stock < v_actual_qty THEN
+                RAISE EXCEPTION 'Insufficient stock for ingredient "%". Available: % %, Required: % %',
+                    v_ing_name, v_curr_ing_stock, v_unit, v_actual_qty, v_unit;
+            END IF;
+
             v_item_unit_cost := COALESCE((v_ing_item->>'unit_cost')::NUMERIC, v_avg_cost, 0.00);
             v_item_total_cost := COALESCE((v_ing_item->>'total_cost')::NUMERIC, ROUND(v_actual_qty * v_item_unit_cost, 2));
             v_total_ing_cost := v_total_ing_cost + v_item_total_cost;

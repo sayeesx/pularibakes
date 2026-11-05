@@ -1,4 +1,4 @@
-﻿import { Ingredient, Product, Recipe, SpecialMixture, SpecialMixtureRecipe } from '../types';
+import { SpecialMixture, SpecialMixtureRecipe } from '../types';
 
 export const INITIAL_SPECIAL_MIXTURES: SpecialMixture[] = [
   {

@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- PULARI BAKES PRODUCTION MANAGEMENT SYSTEM - COMPLETE UNIFIED DATABASE SCHEMA
--- Generated: 2026-11-05T02:05:13.937Z
+-- Generated: 2026-11-05T02:26:08.763Z
 -- Portability: 100% PostgreSQL Standard (Supabase, Self-Hosted Docker, Neon, RDS)
 -- ==============================================================================
 
@@ -744,6 +744,12 @@ BEGIN
                 CONTINUE;
             END IF;
 
+            -- Validate sufficient stock before deducting
+            IF v_curr_ing_stock < v_actual_qty THEN
+                RAISE EXCEPTION 'Insufficient stock for ingredient "%". Available: % %, Required: % %',
+                    v_ing_name, v_curr_ing_stock, v_unit, v_actual_qty, v_unit;
+            END IF;
+
             v_item_unit_cost := COALESCE((v_ing_item->>'unit_cost')::NUMERIC, v_avg_cost, 0.00);
             v_item_total_cost := COALESCE((v_ing_item->>'total_cost')::NUMERIC, ROUND(v_actual_qty * v_item_unit_cost, 2));
             v_total_ing_cost := v_total_ing_cost + v_item_total_cost;
@@ -1434,10 +1440,14 @@ BEGIN
     -- 5. Calculate new weighted average cost and update mixture stock
     v_new_mix_stock := v_curr_mix_stock + p_actual_quantity;
     IF v_new_mix_stock > 0 THEN
-        v_new_mix_avg_cost := ROUND(
-            ((v_curr_mix_stock * v_curr_mix_avg_cost) + v_total_raw_cost) / v_new_mix_stock,
-            2
-        );
+        IF v_curr_mix_stock <= 0 THEN
+            v_new_mix_avg_cost := v_cost_per_unit;
+        ELSE
+            v_new_mix_avg_cost := ROUND(
+                ((v_curr_mix_stock * v_curr_mix_avg_cost) + v_total_raw_cost) / v_new_mix_stock,
+                2
+            );
+        END IF;
     ELSE
         v_new_mix_avg_cost := v_cost_per_unit;
     END IF;
@@ -1598,6 +1608,12 @@ BEGIN
 
             IF NOT FOUND THEN
                 CONTINUE;
+            END IF;
+
+            -- Validate sufficient stock before deducting raw ingredient
+            IF v_curr_ing_stock < v_actual_qty THEN
+                RAISE EXCEPTION 'Insufficient stock for ingredient "%". Available: % %, Required: % %',
+                    v_ing_name, v_curr_ing_stock, v_unit, v_actual_qty, v_unit;
             END IF;
 
             v_item_unit_cost := COALESCE((v_ing_item->>'unit_cost')::NUMERIC, v_avg_cost, 0.00);

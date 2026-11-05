@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DemoRepository } from '../services/demoRepository';
-import { INITIAL_PRODUCTS, INITIAL_INGREDIENTS } from '../services/demoSeedData';
 
 describe('Pulari Bakes Production & Inventory Management System Tests', () => {
   let repo: DemoRepository;

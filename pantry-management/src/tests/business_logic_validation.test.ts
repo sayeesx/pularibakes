@@ -239,7 +239,7 @@ describe('Pulari Bakes Comprehensive Business Logic & Calculation Validation (Se
       // Check stock movement was logged
       const movements = await repo.getStockMovements({ itemId: plumMix.id });
       const deductionMove = movements.find(
-        (m) => m.movementType === 'production_consumption' || m.movementType === 'mixture_consumption'
+        (m) => m.movementType === 'production_consumption' || (m.movementType as string) === 'mixture_consumption'
       );
       expect(deductionMove).toBeDefined();
       expect(Math.abs(deductionMove!.quantity)).toBe(5);
@@ -390,7 +390,7 @@ describe('Pulari Bakes Comprehensive Business Logic & Calculation Validation (Se
         { productId: 'c', productName: 'C', totalProductionKg: 10, batchCount: 1, ingredientCost: 100 },
       ];
 
-      const alloc = allocateDailySharedExpenses(summary, 1000, 0, 0, 0);
+      const alloc = allocateDailySharedExpenses(summary, 1000, 0, 0);
       expect(alloc[0].allocatedOilCost).toBe(333.33);
       expect(alloc[1].allocatedOilCost).toBe(333.33);
       // Final product absorbs the remaining paisa: 1000 - (333.33 + 333.33) = 333.34
@@ -454,7 +454,7 @@ describe('Pulari Bakes Comprehensive Business Logic & Calculation Validation (Se
         quantityDelta: -15,
         reason: 'Dough mixing consumption',
         operatorName: 'Baker',
-        movementType: 'consumption',
+        movementType: 'adjustment',
       });
 
       // 3. Spillage wastage -1 kg
