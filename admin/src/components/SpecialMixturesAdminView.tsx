@@ -128,17 +128,77 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
     }
   };
 
-  // Recipe Estimated Cost Calculation
+  const handleOpenEdit = (mix: SpecialMixture) => {
+    setEditingMixture(mix);
+    if (mix.recipe) {
+      setRecipeExpectedQty(mix.recipe.expectedOutputQuantity || 5);
+      setRecipeExpectedUnit(mix.recipe.expectedOutputUnit || mix.unit);
+      setRecipeInstructions(mix.recipe.instructions || '');
+      setRecipeItems(
+        (mix.recipe.items || []).map((i) => ({
+          ingredientId: i.ingredientId,
+          quantity: i.quantity,
+          unit: i.unit,
+        }))
+      );
+    } else {
+      setRecipeExpectedQty(5);
+      setRecipeExpectedUnit(mix.unit);
+      setRecipeInstructions('');
+      setRecipeItems([]);
+    }
+  };
+
+  const handleOpenCreate = () => {
+    setEditingMixture({
+      name: '',
+      unit: 'kg',
+      currentStock: 0,
+      minStock: 5,
+      avgCostPerUnit: 0,
+      isActive: true,
+    });
+    setRecipeExpectedQty(5);
+    setRecipeExpectedUnit('kg');
+    setRecipeInstructions('');
+    setRecipeItems(
+      ingredients.length > 0
+        ? [
+            {
+              ingredientId: ingredients[0].id,
+              quantity: 1,
+              unit: ingredients[0].unit,
+            },
+          ]
+        : []
+    );
+  };
+
+  // Unit-aware calculation helper
+  const calculateItemCost = useCallback(
+    (ingredientId: string, quantity: number, unit: UnitType) => {
+      const ing = ingredients.find((i) => i.id === ingredientId);
+      if (!ing) return 0;
+      const unitCost = ing.avgCostPerUnit || 0;
+      let qtyInBase = quantity;
+      if (unit === 'g' && ing.unit === 'kg') qtyInBase = quantity / 1000;
+      else if (unit === 'kg' && ing.unit === 'g') qtyInBase = quantity * 1000;
+      else if (unit === 'ml' && ing.unit === 'L') qtyInBase = quantity / 1000;
+      else if (unit === 'L' && ing.unit === 'ml') qtyInBase = quantity * 1000;
+      return qtyInBase * unitCost;
+    },
+    [ingredients]
+  );
+
+  // Recipe Estimated Cost Calculation with Precision
   const recipeCostEstimate = useMemo(() => {
     let totalCost = 0;
     recipeItems.forEach((item) => {
-      const ing = ingredients.find((i) => i.id === item.ingredientId);
-      const unitCost = ing?.avgCostPerUnit || 0;
-      totalCost += item.quantity * unitCost;
+      totalCost += calculateItemCost(item.ingredientId, item.quantity, item.unit);
     });
     const costPerUnit = recipeExpectedQty > 0 ? totalCost / recipeExpectedQty : 0;
     return { totalCost, costPerUnit };
-  }, [recipeItems, ingredients, recipeExpectedQty]);
+  }, [recipeItems, calculateItemCost, recipeExpectedQty]);
 
   // Save Recipe
   const handleSaveRecipe = async (e: React.FormEvent) => {
@@ -160,6 +220,13 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
           unit: item.unit,
         })),
       });
+
+      // Synchronize exact calculated cost per unit to the mixture record
+      await saveSpecialMixture({
+        ...recipeMixture,
+        avgCostPerUnit: recipeCostEstimate.costPerUnit,
+      });
+
       setRecipeMixture(null);
       loadData();
       if (onRefresh) onRefresh();
@@ -171,24 +238,46 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
     }
   };
 
-  // Save Mixture Details
+  // Save Mixture Details & Selected Ingredients
   const handleSaveMixture = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMixture || !editingMixture.name) return;
 
     setSaving(true);
     try {
-      await saveSpecialMixture({
+      const computedAvgCost =
+        recipeItems.length > 0
+          ? recipeCostEstimate.costPerUnit
+          : Number(editingMixture.avgCostPerUnit) || 0;
+
+      const savedMix = await saveSpecialMixture({
         id: editingMixture.id,
         name: editingMixture.name.trim(),
         code: editingMixture.code?.trim() || undefined,
         unit: (editingMixture.unit || 'kg') as UnitType,
         currentStock: Number(editingMixture.currentStock) || 0,
         minStock: Number(editingMixture.minStock) || 0,
-        avgCostPerUnit: Number(editingMixture.avgCostPerUnit) || 0,
+        avgCostPerUnit: computedAvgCost,
         notes: editingMixture.notes?.trim() || undefined,
         isActive: editingMixture.isActive ?? true,
       });
+
+      if (recipeItems.length > 0) {
+        await saveSpecialMixtureRecipe(savedMix.id, {
+          expectedOutputQuantity: recipeExpectedQty || 5,
+          expectedOutputUnit: recipeExpectedUnit || savedMix.unit,
+          instructions: recipeInstructions.trim() || undefined,
+          estimatedCost: recipeCostEstimate.totalCost,
+          items: recipeItems.map((item, idx) => ({
+            id: `item-${idx}`,
+            recipeId: '',
+            ingredientId: item.ingredientId,
+            quantity: item.quantity,
+            unit: item.unit,
+          })),
+        });
+      }
+
       setEditingMixture(null);
       loadData();
       if (onRefresh) onRefresh();
@@ -246,16 +335,7 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
 
           <button
             type="button"
-            onClick={() =>
-              setEditingMixture({
-                name: '',
-                unit: 'kg',
-                currentStock: 0,
-                minStock: 5,
-                avgCostPerUnit: 0,
-                isActive: true,
-              })
-            }
+            onClick={handleOpenCreate}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-pulari-primary text-white font-bold text-xs sm:text-sm hover:bg-pulari-primary/90 transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <FiPlus className="w-4 h-4 stroke-[3]" />
@@ -489,7 +569,7 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
 
                           <button
                             type="button"
-                            onClick={() => setEditingMixture(mix)}
+                            onClick={() => handleOpenEdit(mix)}
                             className="p-1.5 rounded-lg border border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300 transition-colors cursor-pointer"
                             title={language === 'ml' ? 'വിവരങ്ങൾ മാറ്റുക' : 'Edit Mixture'}
                           >
@@ -506,20 +586,27 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
         )}
       </div>
 
-      {/* Add / Edit Mixture Details Modal */}
+      {/* Add / Edit Mixture Details Modal with Formulation Ingredients Selector */}
       {editingMixture && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-[#181616] rounded-2xl max-w-md w-full p-5 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4 animate-scale-up">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-[#181616] rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4 my-auto animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-800 pb-3">
-              <h3 className="font-bold text-base text-stone-900 dark:text-white">
-                {editingMixture.id
-                  ? language === 'ml'
-                    ? 'കൂട്ട് വിവരങ്ങൾ മാറ്റുക'
-                    : 'Edit Special Mixture'
-                  : language === 'ml'
-                  ? 'പുതിയ കൂട്ട് ചേർക്കുക'
-                  : 'New Special Mixture'}
-              </h3>
+              <div>
+                <h3 className="font-bold text-base text-stone-900 dark:text-white">
+                  {editingMixture.id
+                    ? language === 'ml'
+                      ? 'കൂട്ട് വിവരങ്ങൾ മാറ്റുക'
+                      : 'Edit Special Mixture'
+                    : language === 'ml'
+                    ? 'പുതിയ കൂട്ട് ചേർക്കുക'
+                    : 'New Special Mixture'}
+                </h3>
+                <p className="text-xs text-stone-400">
+                  {language === 'ml'
+                    ? 'ചേരുവകൾ തിരഞ്ഞെടുത്ത് കൃത്യമായ ചിലവ് കണക്കാക്കുക'
+                    : 'Select ingredients and calculate accurate unit costing'}
+                </p>
+              </div>
               <button
                 onClick={() => setEditingMixture(null)}
                 className="text-stone-400 hover:text-stone-700 cursor-pointer"
@@ -528,7 +615,7 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
               </button>
             </div>
 
-            <form onSubmit={handleSaveMixture} className="space-y-3.5 text-xs">
+            <form onSubmit={handleSaveMixture} className="space-y-4 text-xs">
               <div>
                 <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
                   {language === 'ml' ? 'കൂട്ടിന്റെ പേര്' : 'Mixture Name'} *
@@ -578,6 +665,157 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
                     <option value="ml">ml (മില്ലിലിറ്റർ)</option>
                     <option value="pcs">pcs (എണ്ണം)</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Formulation Ingredients Selection */}
+              <div className="border border-stone-200 dark:border-stone-800 rounded-xl p-3.5 space-y-2.5 bg-stone-50/50 dark:bg-stone-900/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-black text-stone-800 dark:text-stone-200 block">
+                      {language === 'ml' ? 'ചേരുവകൾ തിരഞ്ഞെടുക്കുക' : 'Select Ingredients for Mixture'}
+                    </span>
+                    <span className="text-[10px] text-stone-500">
+                      {language === 'ml' ? 'കൃത്യമായ വിലയും അളവും സ്വയം കണക്കാക്കുന്നു' : 'Unit costs and totals calculated accurately'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (ingredients.length > 0) {
+                        setRecipeItems([
+                          ...recipeItems,
+                          {
+                            ingredientId: ingredients[0].id,
+                            quantity: 1,
+                            unit: ingredients[0].unit,
+                          },
+                        ]);
+                      }
+                    }}
+                    className="text-xs font-bold px-2.5 py-1 rounded-lg bg-pulari-primary text-white hover:bg-pulari-primary/90 transition-all cursor-pointer shadow-2xs"
+                  >
+                    + {language === 'ml' ? 'ചേരുവ ചേർക്കുക' : 'Add Ingredient'}
+                  </button>
+                </div>
+
+                {recipeItems.length === 0 ? (
+                  <p className="text-stone-400 italic py-2 text-center text-xs">
+                    {language === 'ml'
+                      ? 'ചേരുവകൾ തിരഞ്ഞെടുത്തിട്ടില്ല. മുകളിലെ ബട്ടൺ അമർത്തുക.'
+                      : 'No ingredients selected yet. Click above to add.'}
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {recipeItems.map((item, idx) => {
+                      const lineCost = calculateItemCost(item.ingredientId, item.quantity, item.unit);
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-2 p-2 rounded-lg bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-2xs"
+                        >
+                          <select
+                            value={item.ingredientId}
+                            onChange={(e) => {
+                              const newId = e.target.value;
+                              const found = ingredients.find((i) => i.id === newId);
+                              const updated = [...recipeItems];
+                              updated[idx] = {
+                                ...updated[idx],
+                                ingredientId: newId,
+                                unit: found?.unit || 'kg',
+                              };
+                              setRecipeItems(updated);
+                            }}
+                            className="flex-1 px-2 py-1.5 rounded-md border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 font-medium text-xs"
+                          >
+                            {ingredients.map((ingItem) => (
+                              <option key={ingItem.id} value={ingItem.id}>
+                                {ingItem.name} (₹{ingItem.avgCostPerUnit}/{ingItem.unit})
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="flex items-center gap-1 w-28">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              value={item.quantity || ''}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = [...recipeItems];
+                                updated[idx] = { ...updated[idx], quantity: val };
+                                setRecipeItems(updated);
+                              }}
+                              className="w-16 px-1.5 py-1 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-right font-bold text-xs"
+                              required
+                            />
+                            <select
+                              value={item.unit}
+                              onChange={(e) => {
+                                const updated = [...recipeItems];
+                                updated[idx] = { ...updated[idx], unit: e.target.value as UnitType };
+                                setRecipeItems(updated);
+                              }}
+                              className="text-[11px] font-semibold bg-transparent border-0"
+                            >
+                              <option value="kg">kg</option>
+                              <option value="g">g</option>
+                              <option value="L">L</option>
+                              <option value="ml">ml</option>
+                              <option value="pcs">pcs</option>
+                            </select>
+                          </div>
+
+                          <span className="w-16 text-right font-bold text-stone-700 dark:text-stone-300 font-mono text-xs">
+                            ₹{lineCost.toFixed(1)}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => setRecipeItems(recipeItems.filter((_, i) => i !== idx))}
+                            className="p-1 text-stone-400 hover:text-red-500 cursor-pointer"
+                          >
+                            <FiTrash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Output yield & Calculations Box */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1 text-[11px]">
+                      {language === 'ml' ? 'പ്രതീക്ഷിക്കുന്ന ഔട്ട്പുട്ട്' : 'Expected Output Yield'} *
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.1"
+                        value={recipeExpectedQty || ''}
+                        onChange={(e) => setRecipeExpectedQty(parseFloat(e.target.value) || 0)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 font-bold text-xs"
+                        required
+                      />
+                      <span className="text-stone-500 font-bold">{editingMixture.unit || 'kg'}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-pulari-primary/5 dark:bg-pulari-gold/5 border border-pulari-primary/20 dark:border-pulari-gold/20 flex flex-col justify-center text-right">
+                    <span className="text-[10px] text-stone-500 dark:text-stone-400 font-bold">
+                      {language === 'ml' ? 'കൃത്യമായ യൂണിറ്റ് വില' : 'Accurate Cost Per Unit'}
+                    </span>
+                    <span className="text-sm font-black text-pulari-primary dark:text-pulari-gold font-mono">
+                      ₹{recipeCostEstimate.costPerUnit.toFixed(2)} / {editingMixture.unit || 'kg'}
+                    </span>
+                    <span className="text-[9px] text-stone-400">
+                      Total: ₹{recipeCostEstimate.totalCost.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
               </div>
 

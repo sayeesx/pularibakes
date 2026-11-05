@@ -181,9 +181,7 @@ export const ProductionPage: React.FC = () => {
       const name = ingredientOrKey.name.toLowerCase();
       if (name.includes('ഓയിൽ') || name.includes('oil')) key = 'oil';
       else if (name.includes('ഉപ്പ്') || name.includes('salt')) key = 'salt';
-      else if (name.includes('അണ്ടി തോട്') || name.includes('തോട്') || name.includes('shell') || name.includes('cashew')) key = 'cashew_shell';
-      else if (name.includes('ചിപ്പ്ളി') || name.includes('chippli')) key = 'chippli';
-      else if (name.includes('കറിവേപ്പില') || name.includes('curry')) key = 'curry_leaves';
+      else if (name.includes('പഞ്ചസാര') || name.includes('sugar')) key = 'sugar';
     }
 
     if (key) {
@@ -243,9 +241,7 @@ export const ProductionPage: React.FC = () => {
               let key = '';
               if (n.includes('ഓയിൽ') || n.includes('oil')) key = 'oil';
               else if (n.includes('ഉപ്പ്') || n.includes('salt')) key = 'salt';
-              else if (n.includes('അണ്ടി തോട്') || n.includes('തോട്') || n.includes('shell') || n.includes('cashew')) key = 'cashew_shell';
-              else if (n.includes('ചിപ്പ്ളി') || n.includes('chippli')) key = 'chippli';
-              else if (n.includes('കറിവേപ്പില') || n.includes('curry')) key = 'curry_leaves';
+              else if (n.includes('പഞ്ചസാര') || n.includes('sugar')) key = 'sugar';
 
               if (key) {
                 if (mDate === todayStr || mLocalDate === todayStr || r.includes(todayStr) || isTodayDate(mDate)) {
@@ -346,10 +342,8 @@ export const ProductionPage: React.FC = () => {
   const isOilRecordedForActiveDate = hasRecordedOil(activeClosing) || recordedKeysForActiveDate.includes('oil');
   const hasPendingBasicsForActiveDate = useMemo(() => {
     const isSalt = recordedKeysForActiveDate.includes('salt');
-    const isCashew = recordedKeysForActiveDate.includes('cashew_shell');
-    const isChippli = recordedKeysForActiveDate.includes('chippli') || recordedKeysForActiveDate.includes('chippli_powder');
-    const isCurry = recordedKeysForActiveDate.includes('curry_leaves');
-    return !isOilRecordedForActiveDate || !isSalt || !isCashew || !isChippli || !isCurry;
+    const isSugar = recordedKeysForActiveDate.includes('sugar');
+    return !isOilRecordedForActiveDate || !isSalt || !isSugar;
   }, [isOilRecordedForActiveDate, recordedKeysForActiveDate]);
 
   const missingBasicItems = useMemo(() => {
@@ -376,25 +370,11 @@ export const ProductionPage: React.FC = () => {
           : (isYesterday ? "Yesterday's salt has not been recorded" : "Today's salt has not been recorded")
       );
     }
-    if (!recordedKeysForActiveDate.includes('cashew_shell')) {
+    if (!recordedKeysForActiveDate.includes('sugar')) {
       list.push(
         language === 'ml'
-          ? (isYesterday ? 'ഇന്നലത്തെ അണ്ടി തോട് രേഖപ്പെടുത്തിയിട്ടില്ല' : 'ഇന്നത്തെ അണ്ടി തോട് രേഖപ്പെടുത്തിയിട്ടില്ല')
-          : (isYesterday ? "Yesterday's cashew shell has not been recorded" : "Today's cashew shell has not been recorded")
-      );
-    }
-    if (!recordedKeysForActiveDate.includes('chippli')) {
-      list.push(
-        language === 'ml'
-          ? (isYesterday ? 'ഇന്നലത്തെ ചിപ്പ്ളി പൊടി രേഖപ്പെടുത്തിയിട്ടില്ല' : 'ഇന്നത്തെ ചിപ്പ്ളി പൊടി രേഖപ്പെടുത്തിയിട്ടില്ല')
-          : (isYesterday ? "Yesterday's chippli powder has not been recorded" : "Today's chippli powder has not been recorded")
-      );
-    }
-    if (!recordedKeysForActiveDate.includes('curry_leaves')) {
-      list.push(
-        language === 'ml'
-          ? (isYesterday ? 'ഇന്നലത്തെ കറിവേപ്പില രേഖപ്പെടുത്തിയിട്ടില്ല' : 'ഇന്നത്തെ കറിവേപ്പില രേഖപ്പെടുത്തിയിട്ടില്ല')
-          : (isYesterday ? "Yesterday's curry leaves have not been recorded" : "Today's curry leaves have not been recorded")
+          ? (isYesterday ? 'ഇന്നലത്തെ പഞ്ചസാര രേഖപ്പെടുത്തിയിട്ടില്ല' : 'ഇന്നത്തെ പഞ്ചസാര രേഖപ്പെടുത്തിയിട്ടില്ല')
+          : (isYesterday ? "Yesterday's sugar has not been recorded" : "Today's sugar has not been recorded")
       );
     }
 

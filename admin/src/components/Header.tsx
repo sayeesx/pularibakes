@@ -107,34 +107,6 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Language Switcher Pill (Google/Facebook Minimal Style) */}
-      <div className="px-4 pt-3 pb-1">
-        <div className="flex items-center justify-between p-1 rounded-xl bg-stone-100 dark:bg-[#201B1C] border border-stone-200/70 dark:border-stone-800 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => setLanguage('ml')}
-            className={`flex-1 py-1 text-center rounded-lg transition-all ${
-              language === 'ml'
-                ? 'bg-white dark:bg-[#2D2627] text-stone-900 dark:text-white shadow-xs font-bold'
-                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-300'
-            }`}
-          >
-            മലയാളം
-          </button>
-          <button
-            type="button"
-            onClick={() => setLanguage('en')}
-            className={`flex-1 py-1 text-center rounded-lg transition-all ${
-              language === 'en'
-                ? 'bg-white dark:bg-[#2D2627] text-stone-900 dark:text-white shadow-xs font-bold'
-                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-300'
-            }`}
-          >
-            English
-          </button>
-        </div>
-      </div>
-
       {/* Vertical Navigation Menu */}
       <div className="flex-1 py-2 px-3 overflow-y-auto no-scrollbar space-y-1">
         <span className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-stone-400 dark:text-stone-500 block mb-1">

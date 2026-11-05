@@ -72,6 +72,25 @@ export const isExcludedRecipeIngredient = (ing: { name?: string; category?: stri
 
 export const isDailySharedBasic = (name: string) => isExcludedRecipeIngredient({ name });
 
+export type ProductCategoryTab = 'all' | 'mixture' | 'murukku' | 'banana_chips' | 'cakes' | 'others';
+
+export const getProductCategory = (name: string): 'mixture' | 'murukku' | 'banana_chips' | 'cakes' | 'others' => {
+  const n = (name || '').toLowerCase().trim();
+  if (n.includes('കേക്ക്') || n.includes('cake')) {
+    return 'cakes';
+  }
+  if (n.includes('ചിപ്സ്') || n.includes('ബനാന') || n.includes('chips') || n.includes('banana')) {
+    return 'banana_chips';
+  }
+  if (n.includes('മുറുക്ക്') || n.includes('murukku') || n.includes('മുറുക്ക')) {
+    return 'murukku';
+  }
+  if (n.includes('മിക്സ്ചർ') || n.includes('മിക്സ്') || n.includes('mixture') || n.includes('mix')) {
+    return 'mixture';
+  }
+  return 'others';
+};
+
 export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
   products,
   ingredients = [],
@@ -87,6 +106,7 @@ export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
 
   const [search, setSearch] = useState('');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<ProductCategoryTab>('all');
   const excelInputRef = useRef<HTMLInputElement>(null);
   const [isImportingExcel, setIsImportingExcel] = useState(false);
 
@@ -586,6 +606,22 @@ export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
     }
   };
 
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      all: products.length,
+      mixture: 0,
+      murukku: 0,
+      banana_chips: 0,
+      cakes: 0,
+      others: 0,
+    };
+    for (const p of products) {
+      const cat = getProductCategory(p.name);
+      counts[cat]++;
+    }
+    return counts;
+  }, [products]);
+
   const filteredProducts = products.filter((p) => {
     const matchSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -594,6 +630,12 @@ export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
     if (!matchSearch) return false;
     if (filterActive === 'active') return p.isActive;
     if (filterActive === 'inactive') return !p.isActive;
+
+    if (selectedCategory !== 'all') {
+      const cat = getProductCategory(p.name);
+      if (cat !== selectedCategory) return false;
+    }
+
     return true;
   });
 
@@ -660,6 +702,39 @@ export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
             <span>New Product</span>
           </button>
         </div>
+      </div>
+
+      {/* Product Categories / Sections in Pure Malayalam */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {[
+          { id: 'all', label: 'എല്ലാം (All)', count: categoryCounts.all },
+          { id: 'mixture', label: 'മിക്സ്ചർ (Mixture)', count: categoryCounts.mixture },
+          { id: 'murukku', label: 'മുറുക്ക് (Murukku)', count: categoryCounts.murukku },
+          { id: 'banana_chips', label: 'ബനാന ചിപ്സ് (Banana Chips)', count: categoryCounts.banana_chips },
+          { id: 'cakes', label: 'കേക്കുകൾ (Cakes)', count: categoryCounts.cakes },
+          { id: 'others', label: 'മറ്റു പലഹാരങ്ങൾ (Others)', count: categoryCounts.others },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSelectedCategory(tab.id as ProductCategoryTab)}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              selectedCategory === tab.id
+                ? 'bg-epso-red text-white shadow-sm dark:bg-amber-500 dark:text-stone-950'
+                : 'bg-white dark:bg-[#1E1B1B] text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-[#2E2828] hover:bg-stone-50 dark:hover:bg-[#282323]'
+            }`}
+          >
+            <span>{tab.label}</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                selectedCategory === tab.id
+                  ? 'bg-white/20 text-white dark:bg-stone-950/20 dark:text-stone-950 font-black'
+                  : 'bg-stone-100 dark:bg-[#282323] text-stone-500 dark:text-stone-400'
+              }`}
+            >
+              {tab.count}
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* Filter and Search Bar */}

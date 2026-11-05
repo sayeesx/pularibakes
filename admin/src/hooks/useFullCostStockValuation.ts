@@ -61,7 +61,7 @@ export function useFullCostStockValuation(products: Product[], productionRuns: P
         }
 
         // Compute daily basic ingredients consumption cost by date
-        // Basic ingredients: ഉപ്പ്, അണ്ടി തോട്, ചിപ്പ്ളി പൊടി, കറിവേപ്പില
+        // Basic ingredients: ഉപ്പ്, പഞ്ചസാര (Sugar)
         const basicCostByDate: Record<string, number> = {};
         for (const m of movementsList || []) {
           if ((m.quantity || 0) >= 0) continue;

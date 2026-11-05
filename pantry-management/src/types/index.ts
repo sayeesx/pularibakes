@@ -166,6 +166,7 @@ export interface DailyClosing {
   totalOilUsedKg?: number;
   oilLeftoverKg?: number;
   saltUsedKg?: number;
+  sugarUsedKg?: number;
   cashewShellUsedKg?: number;
   chippliPowderUsedKg?: number;
   curryLeavesUsedKg?: number;

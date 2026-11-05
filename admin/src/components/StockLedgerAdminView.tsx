@@ -110,19 +110,15 @@ export const StockLedgerAdminView: React.FC<StockLedgerAdminViewProps> = ({
       return 'packets';
     }
 
-    // 2. Basic Ingredients (Oil, Salt, Cashew Shell, Curry leaves, Chippli, etc.)
+    // 2. Basic Ingredients (Oil, Salt, Sugar)
     const isBasicName =
       nameLower.includes('വെളിച്ചെണ്ണ') ||
       nameLower.includes('oil') ||
       nameLower.includes('എണ്ണ') ||
       nameLower.includes('ഉപ്പ്') ||
       nameLower.includes('salt') ||
-      nameLower.includes('കറിവേപ്പില') ||
-      nameLower.includes('curry') ||
-      nameLower.includes('കശുവണ്ടി') ||
-      nameLower.includes('cashew') ||
-      nameLower.includes('ചിപ്പിലി') ||
-      nameLower.includes('chippli');
+      nameLower.includes('പഞ്ചസാര') ||
+      nameLower.includes('sugar');
 
     if (
       ing?.category === 'basic' ||

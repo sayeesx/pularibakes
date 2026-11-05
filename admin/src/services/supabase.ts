@@ -869,8 +869,8 @@ export async function fetchProductionRuns(force = false): Promise<ProductionRun[
         .limit(100),
       supabase
         .from('packing_records')
-        .select('id, production_run_id, packet_size, packets_packed, weight_packed_kg, notes')
-        .order('created_at', { ascending: false })
+        .select('*')
+        .order('packed_at', { ascending: false })
         .limit(500),
     ]);
 
@@ -879,24 +879,27 @@ export async function fetchProductionRuns(force = false): Promise<ProductionRun[
       const runPackings = (packingsData || []).filter((p: any) =>
         p.production_run_id
           ? p.production_run_id === row.id
-          : Boolean(p.notes && p.notes.includes(row.run_number))
+          : Boolean(p.notes && row.run_number && p.notes.includes(row.run_number))
       );
       const totalPackets = runPackings.reduce(
-        (sum: number, p: any) => sum + (Number(p.packets_packed) || 0),
+        (sum: number, p: any) => sum + (Number(p.quantity_packed ?? p.packets_packed) || 0),
         0
       );
 
+      const prodDate = row.production_date || (row.start_time ? row.start_time.split('T')[0] : (row.created_at ? row.created_at.split('T')[0] : new Date().toISOString().split('T')[0]));
+      const runNum = row.run_number || ('RUN-' + (row.created_at ? row.created_at.slice(0, 10).replace(/-/g, '') : '2026') + '-' + row.id.slice(0, 4).toUpperCase());
+
       return {
         id: row.id,
-        runNumber: row.run_number,
+        runNumber: runNum,
         productId: row.product_id,
         productName: row.products?.name || 'Snack',
         recipeId: row.recipe_id,
         recipeVersion: row.recipe_version,
-        productionDate: row.production_date,
-        plannedQuantity: Number(row.planned_quantity) || 0,
+        productionDate: prodDate,
+        plannedQuantity: Number(row.planned_quantity ?? row.target_quantity) || 0,
         actualQuantity: Number(row.actual_quantity) || 0,
-        unit: row.unit,
+        unit: row.unit || 'kg',
         status: row.status as any,
         notes: row.notes,
         operatorName: row.operator_name || 'Staff',
@@ -913,8 +916,8 @@ export async function fetchProductionRuns(force = false): Promise<ProductionRun[
         createdAt: row.created_at,
         packingRecords: runPackings.map((p: any) => ({
           id: p.id,
-          packetSize: p.packet_size,
-          packetsPacked: Number(p.packets_packed) || 0,
+          packetSize: p.packet_size || 'Standard',
+          packetsPacked: Number(p.quantity_packed ?? p.packets_packed) || 0,
           weightPackedKg: Number(p.weight_packed_kg) || 0,
         })),
         totalPacketsPacked: totalPackets,
@@ -1733,34 +1736,41 @@ export async function recordPacking(params: {
 export async function fetchPackingRecords(options?: { productId?: string; date?: string; limit?: number }, force = false): Promise<PackingRecord[]> {
   const cacheKey = `admin_packing_records_${options?.productId || 'all'}_${options?.date || 'all'}_${options?.limit || 0}`;
   return dbCache.wrap(cacheKey, async () => {
-    let query = supabase.from('packing_records').select('*, products(name)').order('created_at', { ascending: false });
+    let query = supabase.from('packing_records').select('*').order('packed_at', { ascending: false });
     if (options?.limit) query = query.limit(options.limit);
-    if (options?.productId) query = query.eq('product_id', options.productId);
-    if (options?.date) query = query.eq('packing_date', options.date);
 
     const { data, error } = await query;
     if (error) throw error;
 
-    return (data || []).map((row: any) => ({
+    let records = (data || []).map((row: any) => ({
       id: row.id,
-      packingDate: row.packing_date,
+      packingDate: row.packing_date || (row.packed_at ? row.packed_at.split('T')[0] : new Date().toISOString().split('T')[0]),
       productId: row.product_id,
-      productName: row.products?.name || 'Product',
+      productName: row.product_name || 'Snack',
       productionRunId: row.production_run_id,
-      packagingItemId: row.packaging_item_id,
-      packetSize: row.packet_size,
-      packetsPacked: Number(row.packets_packed) || 0,
+      packagingItemId: row.packaging_item_id || row.packet_type_id,
+      packetSize: row.packet_size || 'Standard',
+      packetsPacked: Number(row.quantity_packed ?? row.packets_packed) || 0,
       coversConsumed: Number(row.covers_consumed) || 0,
       coverUnitCost: Number(row.cover_unit_cost) || 0,
       packagingCost: Number(row.packaging_cost) || 0,
       packingLabourRate: Number(row.packing_labour_rate) || 0,
       packingLabourCost: Number(row.packing_labour_cost) || 0,
-      totalPackingCost: Number(row.total_packing_cost) || 0,
+      totalPackingCost: Number(row.total_packing_cost ?? row.total_cost) || 0,
       weightPackedKg: Number(row.weight_packed_kg) || 0,
-      operatorName: row.operator_name,
+      operatorName: row.operator_name || row.operator || 'Staff',
       notes: row.notes,
-      createdAt: row.created_at,
+      createdAt: row.created_at || row.packed_at,
     }));
+
+    if (options?.productId) {
+      records = records.filter((r: any) => r.productId === options.productId);
+    }
+    if (options?.date) {
+      records = records.filter((r: any) => r.packingDate === options.date);
+    }
+
+    return records;
   }, { ttl: dbCache.TTL.PACKING_RECORDS, force });
 }
 
@@ -1867,22 +1877,24 @@ export async function saveDailyWage(params: {
 export async function fetchTotalPacketsForDate(date: string): Promise<number> {
   const { data, error } = await supabase
     .from('packing_records')
-    .select('packets_packed')
-    .eq('packing_date', date);
+    .select('*');
 
-  if (error) return 0;
-  return (data || []).reduce((sum: number, r: any) => sum + (Number(r.packets_packed) || 0), 0);
+  if (error || !data) return 0;
+  return data
+    .filter((r: any) => (r.packed_at && r.packed_at.startsWith(date)) || (r.packing_date && r.packing_date === date))
+    .reduce((sum: number, r: any) => sum + (Number(r.quantity_packed ?? r.packets_packed) || 0), 0);
 }
 
 export async function fetchTotalProductionKgForDate(date: string): Promise<number> {
   const { data, error } = await supabase
     .from('production_runs')
-    .select('actual_quantity')
-    .eq('production_date', date)
+    .select('actual_quantity, start_time, created_at, status')
     .eq('status', 'completed');
 
-  if (error) return 0;
-  return (data || []).reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
+  if (error || !data) return 0;
+  return data
+    .filter((r: any) => (r.start_time && r.start_time.startsWith(date)) || (r.created_at && r.created_at.startsWith(date)))
+    .reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
 }
 
 // ============================================================================

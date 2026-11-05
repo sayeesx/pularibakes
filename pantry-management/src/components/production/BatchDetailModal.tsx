@@ -9,6 +9,7 @@ import {
   TbScale,
   TbDroplet,
   TbSparkles,
+  TbCandy,
   TbFlame,
   TbCalendar,
   TbUser,
@@ -87,9 +88,7 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
 
     const oilUsed = Number(dailyClosing.totalOilUsedKg ?? dailyClosing.oilConsumed) || 0;
     const saltUsed = Number(dailyClosing.saltUsedKg) || 0;
-    const cashewUsed = Number(dailyClosing.cashewShellUsedKg) || 0;
-    const chippliUsed = Number(dailyClosing.chippliPowderUsedKg) || 0;
-    const curryLeavesUsed = Number(dailyClosing.curryLeavesUsedKg) || 0;
+    const sugarUsed = Number((dailyClosing as any).sugarUsedKg) || 0;
 
     return {
       ratioPercent: (batchRatio * 100).toFixed(1),
@@ -97,13 +96,9 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
       oilDailyTotal: oilUsed.toFixed(2),
       saltKg: (saltUsed * batchRatio).toFixed(2),
       saltDailyTotal: saltUsed.toFixed(2),
-      cashewKg: (cashewUsed * batchRatio).toFixed(2),
-      cashewDailyTotal: cashewUsed.toFixed(2),
-      chippliKg: (chippliUsed * batchRatio).toFixed(2),
-      chippliDailyTotal: chippliUsed.toFixed(2),
-      curryLeavesKg: (curryLeavesUsed * batchRatio).toFixed(2),
-      curryLeavesDailyTotal: curryLeavesUsed.toFixed(2),
-      hasRecordedAny: oilUsed > 0 || saltUsed > 0 || cashewUsed > 0 || chippliUsed > 0 || curryLeavesUsed > 0,
+      sugarKg: (sugarUsed * batchRatio).toFixed(2),
+      sugarDailyTotal: sugarUsed.toFixed(2),
+      hasRecordedAny: oilUsed > 0 || saltUsed > 0 || sugarUsed > 0,
     };
   }, [dailyClosing, batchRatio]);
 
@@ -387,43 +382,23 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
                   </span>
                 </div>
 
-                {/* 3. Cashew Shell */}
+                {/* 3. Sugar */}
                 <div className="p-2.5 rounded-xl bg-white dark:bg-[#1E1B1B] border border-stone-200/80 dark:border-[#282323] flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-orange-500/15 text-orange-600 dark:text-orange-400">
-                      <TbPackage className="w-4 h-4 stroke-[2.2]" />
+                    <span className="p-1.5 rounded-lg bg-pink-500/15 text-pink-600 dark:text-pink-400">
+                      <TbCandy className="w-4 h-4 stroke-[2.2]" />
                     </span>
                     <div>
                       <span className="font-bold text-stone-900 dark:text-white font-malayalam block leading-none">
-                        {language === 'ml' ? 'അണ്ടി തോട്' : 'Cashew Shell'}
+                        {language === 'ml' ? 'പഞ്ചസാര' : 'Sugar'}
                       </span>
                       <span className="text-[10px] text-stone-400 font-mono">
-                        {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {calculatedBasics.cashewDailyTotal} kg
+                        {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {calculatedBasics.sugarDailyTotal} kg
                       </span>
                     </div>
                   </div>
-                  <span className="font-black text-orange-600 dark:text-orange-400 font-mono text-sm">
-                    {calculatedBasics.cashewKg} kg
-                  </span>
-                </div>
-
-                {/* 4. Chippli Powder */}
-                <div className="p-2.5 rounded-xl bg-white dark:bg-[#1E1B1B] border border-stone-200/80 dark:border-[#282323] flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-red-500/15 text-red-600 dark:text-red-400">
-                      <TbFlame className="w-4 h-4 stroke-[2.2]" />
-                    </span>
-                    <div>
-                      <span className="font-bold text-stone-900 dark:text-white font-malayalam block leading-none">
-                        {language === 'ml' ? 'ചിപ്പ്ളി പൊടി' : 'Chippli Powder'}
-                      </span>
-                      <span className="text-[10px] text-stone-400 font-mono">
-                        {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {calculatedBasics.chippliDailyTotal} kg
-                      </span>
-                    </div>
-                  </div>
-                  <span className="font-black text-red-600 dark:text-red-400 font-mono text-sm">
-                    {calculatedBasics.chippliKg} kg
+                  <span className="font-black text-pink-600 dark:text-pink-400 font-mono text-sm">
+                    {calculatedBasics.sugarKg} kg
                   </span>
                 </div>
               </div>

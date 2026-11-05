@@ -5,10 +5,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import {
   TbDroplet,
   TbSparkles,
-  TbLeaf,
-  TbFlame,
-  TbPlant2,
-  TbPackage,
+  TbCandy,
   TbChevronRight,
   TbToolsKitchen2,
   TbAlertTriangle,
@@ -36,7 +33,7 @@ export const BasicIngredientsSelectorModal: React.FC<BasicIngredientsSelectorMod
 }) => {
   const { language } = useLanguage();
 
-  // Basic ingredients mapping with custom icons and color schemes
+  // Basic ingredients mapping with custom icons and color schemes (Oil, Salt, Sugar)
   const basicItemsConfig = [
     {
       key: 'oil',
@@ -63,39 +60,15 @@ export const BasicIngredientsSelectorModal: React.FC<BasicIngredientsSelectorMod
       isOil: false,
     },
     {
-      key: 'cashew_shell',
-      matchNames: ['അണ്ടി തോട്', 'cashew'],
-      labelMl: 'അണ്ടി തോട്',
-      labelEn: 'Cashew Shell',
+      key: 'sugar',
+      matchNames: ['പഞ്ചസാര', 'sugar'],
+      labelMl: 'പഞ്ചസാര',
+      labelEn: 'Sugar',
       subMl: 'റൂളർ: 25 kg വരെ അളക്കാം',
       subEn: 'Ruler: Up to 25 kg',
-      icon: TbPackage,
-      colorClass: 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30',
-      badgeClass: 'bg-orange-100 text-orange-900 dark:bg-orange-950/60 dark:text-orange-300',
-      isOil: false,
-    },
-    {
-      key: 'chippli_powder',
-      matchNames: ['ചിപ്പ്ളി പൊടി', 'chippli'],
-      labelMl: 'ചിപ്പ്ളി പൊടി',
-      labelEn: 'Chippli Powder',
-      subMl: 'റൂളർ: 25 kg വരെ അളക്കാം',
-      subEn: 'Ruler: Up to 25 kg',
-      icon: TbFlame,
-      colorClass: 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30',
-      badgeClass: 'bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-300',
-      isOil: false,
-    },
-    {
-      key: 'curry_leaves',
-      matchNames: ['കറിവേപ്പില', 'കറിവേപ്പി', 'curry leaves'],
-      labelMl: 'കറിവേപ്പില',
-      labelEn: 'Curry Leaves',
-      subMl: 'റൂളർ: 25 kg വരെ അളക്കാം',
-      subEn: 'Ruler: Up to 25 kg',
-      icon: TbPlant2,
-      colorClass: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-      badgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300',
+      icon: TbCandy,
+      colorClass: 'bg-pink-500/15 text-pink-600 dark:text-pink-400 border-pink-500/30',
+      badgeClass: 'bg-pink-100 text-pink-900 dark:bg-pink-950/60 dark:text-pink-300',
       isOil: false,
     },
   ];
@@ -152,12 +125,7 @@ export const BasicIngredientsSelectorModal: React.FC<BasicIngredientsSelectorMod
 
           const isRecorded = item.isOil
             ? Boolean(isOilRecorded)
-            : (recordedKeys || []).some(
-                (k) =>
-                  k === item.key ||
-                  (item.key === 'chippli_powder' && (k === 'chippli' || k === 'chippli_powder')) ||
-                  (item.key === 'cashew_shell' && (k === 'cashew_shell' || k === 'cashew'))
-              );
+            : (recordedKeys || []).some((k) => k === item.key);
 
           const IconComponent = item.icon;
 

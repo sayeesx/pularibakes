@@ -46,18 +46,8 @@ export const MobileAppHeader: React.FC<MobileAppHeaderProps> = ({
           </div>
         </div>
 
-        {/* Right Controls: Language Pill, Refresh, Theme Toggle, Notification Bell */}
+        {/* Right Controls: Refresh, Theme Toggle, Notification Bell */}
         <div className="flex items-center gap-1.5">
-          {/* Quick Language Switcher */}
-          <button
-            type="button"
-            onClick={() => setLanguage(language === 'ml' ? 'en' : 'ml')}
-            className="px-2 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-[#241F20] text-stone-700 dark:text-stone-300 text-[11px] font-bold border border-stone-200 dark:border-stone-800"
-            title="Switch Language"
-          >
-            {language === 'ml' ? 'ENG' : 'മല'}
-          </button>
-
           {isTodayWagePending && (
             <button
               type="button"

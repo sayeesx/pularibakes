@@ -89,11 +89,10 @@ export function calculateContinuousOilExpense(
 }
 
 /**
- * Checks if an ingredient name matches any of the 4 basic ingredients:
+ * Checks if an ingredient name matches any of the basic ingredients:
  * - ഉപ്പ് (Salt)
- * - അണ്ടി തോട് (Cashew shell)
- * - ചിപ്പ്ളി പൊടി (Chippli powder)
- * - കറിവേപ്പില (Curry leaves)
+ * - ഓയിൽ (Oil)
+ * - പഞ്ചസാര (Sugar)
  */
 export function isBasicIngredientName(name: string): boolean {
   if (!name) return false;
@@ -101,14 +100,10 @@ export function isBasicIngredientName(name: string): boolean {
   return (
     n.includes('ഉപ്പ്') ||
     n.includes('salt') ||
-    n.includes('അണ്ടി തോട്') ||
-    (n.includes('തോട്') && n.includes('അണ്ടി')) ||
-    n.includes('cashew') ||
-    n.includes('ചിപ്പ്ളി') ||
-    n.includes('chippli') ||
-    n.includes('കറിവേപ്പില') ||
-    n.includes('കറിവേപ്പി') ||
-    n.includes('curry')
+    n.includes('ഓയിൽ') ||
+    n.includes('oil') ||
+    n.includes('പഞ്ചസാര') ||
+    n.includes('sugar')
   );
 }
 

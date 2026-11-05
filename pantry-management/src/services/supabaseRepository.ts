@@ -1002,48 +1002,59 @@ export class SupabaseRepository implements IEpsoRepository {
         let query = client
           .from('production_runs')
           .select('*, products(name), production_consumption(*, ingredients(name))')
-          .order('production_date', { ascending: false })
           .order('created_at', { ascending: false });
 
         if (options?.limit) query = query.limit(options.limit);
-        if (options?.startDate) query = query.gte('production_date', options.startDate);
-        if (options?.endDate) query = query.lte('production_date', options.endDate);
         if (options?.productId) query = query.eq('product_id', options.productId);
         if (options?.status) query = query.eq('status', options.status);
 
         const { data, error } = await query;
         if (error) throw new Error(error.message);
 
-        return (data || []).map((row: any) => ({
-          id: row.id,
-          runNumber: row.run_number,
-          productId: row.product_id,
-          productName: row.products?.name || 'Product',
-          recipeId: row.recipe_id || undefined,
-          recipeVersion: row.recipe_version || undefined,
-          productionDate: row.production_date,
-          plannedQuantity: Number(row.planned_quantity),
-          actualQuantity: Number(row.actual_quantity),
-          unit: row.unit,
-          status: row.status,
-          cancellationReason: row.cancellation_reason || undefined,
-          cancelledAt: row.cancelled_at || undefined,
-          cancelledBy: row.cancelled_by || undefined,
-          notes: row.notes || undefined,
-          operatorName: row.operator_name,
-          totalIngredientCost: Number(row.total_ingredient_cost) || 0,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          ingredientsConsumed: (row.production_consumption || []).map((c: any) => ({
-            ingredientId: c.ingredient_id,
-            ingredientName: c.ingredients?.name || 'Ingredient',
-            expectedQuantity: Number(c.expected_quantity || 0),
-            actualQuantity: Number(c.actual_quantity),
-            unit: c.unit,
-            unitCost: Number(c.unit_cost) || 0,
-            totalCost: Number(c.total_cost) || 0,
-          })),
-        }));
+        let runs = (data || []).map((row: any) => {
+          const prodDate = row.production_date || (row.start_time ? row.start_time.split('T')[0] : (row.created_at ? row.created_at.split('T')[0] : new Date().toISOString().split('T')[0]));
+          const runNum = row.run_number || ('RUN-' + (row.created_at ? row.created_at.slice(0, 10).replace(/-/g, '') : '2026') + '-' + row.id.slice(0, 4).toUpperCase());
+
+          return {
+            id: row.id,
+            runNumber: runNum,
+            productId: row.product_id,
+            productName: row.products?.name || 'Product',
+            recipeId: row.recipe_id || undefined,
+            recipeVersion: row.recipe_version || undefined,
+            productionDate: prodDate,
+            plannedQuantity: Number(row.planned_quantity ?? row.target_quantity ?? 0),
+            actualQuantity: Number(row.actual_quantity || 0),
+            unit: row.unit || 'kg',
+            status: row.status,
+            cancellationReason: row.cancellation_reason || undefined,
+            cancelledAt: row.cancelled_at || undefined,
+            cancelledBy: row.cancelled_by || undefined,
+            notes: row.notes || undefined,
+            operatorName: row.operator_name || 'Staff',
+            totalIngredientCost: Number(row.total_ingredient_cost) || 0,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            ingredientsConsumed: (row.production_consumption || []).map((c: any) => ({
+              ingredientId: c.ingredient_id,
+              ingredientName: c.ingredients?.name || 'Ingredient',
+              expectedQuantity: Number(c.expected_quantity || 0),
+              actualQuantity: Number(c.actual_quantity || 0),
+              unit: c.unit,
+              unitCost: Number(c.unit_cost) || 0,
+              totalCost: Number(c.total_cost) || 0,
+            })),
+          };
+        });
+
+        if (options?.startDate) {
+          runs = runs.filter((r: any) => r.productionDate >= options.startDate!);
+        }
+        if (options?.endDate) {
+          runs = runs.filter((r: any) => r.productionDate <= options.endDate!);
+        }
+
+        return runs;
       },
       { ttl: 45 * 1000 }
     );
@@ -1059,23 +1070,26 @@ export class SupabaseRepository implements IEpsoRepository {
 
     if (error || !data) return null;
 
+    const prodDate = data.production_date || (data.start_time ? data.start_time.split('T')[0] : (data.created_at ? data.created_at.split('T')[0] : new Date().toISOString().split('T')[0]));
+    const runNum = data.run_number || ('RUN-' + (data.created_at ? data.created_at.slice(0, 10).replace(/-/g, '') : '2026') + '-' + data.id.slice(0, 4).toUpperCase());
+
     return {
       id: data.id,
-      runNumber: data.run_number,
+      runNumber: runNum,
       productId: data.product_id,
       productName: data.products?.name || 'Product',
       recipeId: data.recipe_id || undefined,
       recipeVersion: data.recipe_version || undefined,
-      productionDate: data.production_date,
-      plannedQuantity: Number(data.planned_quantity),
-      actualQuantity: Number(data.actual_quantity),
-      unit: data.unit,
+      productionDate: prodDate,
+      plannedQuantity: Number(data.planned_quantity ?? data.target_quantity ?? 0),
+      actualQuantity: Number(data.actual_quantity || 0),
+      unit: data.unit || 'kg',
       status: data.status,
       cancellationReason: data.cancellation_reason || undefined,
       cancelledAt: data.cancelled_at || undefined,
       cancelledBy: data.cancelled_by || undefined,
       notes: data.notes || undefined,
-      operatorName: data.operator_name,
+      operatorName: data.operator_name || 'Staff',
       totalIngredientCost: Number(data.total_ingredient_cost) || 0,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
@@ -1114,28 +1128,28 @@ export class SupabaseRepository implements IEpsoRepository {
     const client = this.checkClient();
 
     // Invoking PostgreSQL atomic stored procedure
-    const { data: runId, error } = await client.rpc('record_production_run_atomic', {
-      p_run_number: params.runNumber,
+    const { data: rpcRes, error } = await client.rpc('record_production_run_atomic', {
       p_product_id: params.productId,
       p_recipe_id: params.recipeId || null,
-      p_recipe_version: params.recipeVersion || null,
-      p_production_date: params.productionDate,
-      p_planned_quantity: params.plannedQuantity,
       p_actual_quantity: params.actualQuantity,
-      p_unit: params.unit,
-      p_operator_name: params.operatorName,
+      p_unit: params.unit || 'kg',
+      p_operator: params.operatorName || 'Staff',
       p_notes: params.notes || null,
-      p_ingredients_consumed: params.ingredientsConsumed.map((i) => ({
+      p_oil_absorbed_kg: 0,
+      p_oil_carried_forward_kg: 0,
+      p_packets: [],
+      p_ingredients: params.ingredientsConsumed.map((i) => ({
         ingredient_id: i.ingredientId,
-        expected_quantity: i.expectedQuantity,
-        actual_quantity: i.actualQuantity,
+        quantity: i.actualQuantity,
         unit: i.unit,
         unit_cost: i.unitCost || 0,
-        total_cost: i.totalCost || 0,
       })),
     });
 
     if (error) throw new Error(error.message);
+
+    const runId = typeof rpcRes === 'string' ? rpcRes : (rpcRes?.production_run_id || rpcRes?.id);
+    if (!runId) throw new Error('Failed to retrieve created production run ID');
 
     dbCache.invalidate('production_runs');
     dbCache.invalidate('product');
@@ -1750,15 +1764,19 @@ export class SupabaseRepository implements IEpsoRepository {
     const totalSharedExpense = roundCurrency(oilTotalExpense + productionWages);
 
     // 6. Fetch completed production runs on that date
-    const { data: runs, error: runsErr } = await client
+    const { data: allRuns, error: runsErr } = await client
       .from('production_runs')
-      .select('id, product_id, actual_quantity, total_ingredient_cost, products(name)')
-      .eq('production_date', productionDate)
+      .select('id, product_id, actual_quantity, total_ingredient_cost, products(name), start_time, created_at')
       .eq('status', 'completed');
 
     if (runsErr) throw new Error(runsErr.message);
 
-    const totalProductionKg = (runs || []).reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
+    const runs = (allRuns || []).filter((r: any) =>
+      (r.start_time && r.start_time.startsWith(productionDate)) ||
+      (r.created_at && r.created_at.startsWith(productionDate))
+    );
+
+    const totalProductionKg = runs.reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
 
     // Metadata preserving exact cook inputs
     const metaPayload = {
@@ -2287,34 +2305,41 @@ export class SupabaseRepository implements IEpsoRepository {
       `packing_records_${JSON.stringify(options || {})}`,
       async () => {
         const client = this.checkClient();
-        let query = client.from('packing_records').select('*, products(name)').order('created_at', { ascending: false });
+        let query = client.from('packing_records').select('*').order('packed_at', { ascending: false });
         if (options?.limit) query = query.limit(options.limit);
-        if (options?.productId) query = query.eq('product_id', options.productId);
-        if (options?.date) query = query.eq('packing_date', options.date);
 
         const { data, error } = await query;
         if (error) throw new Error(error.message);
 
-        return (data || []).map((row: any) => ({
+        let records = (data || []).map((row: any) => ({
           id: row.id,
-          packingDate: row.packing_date,
+          packingDate: row.packing_date || (row.packed_at ? row.packed_at.split('T')[0] : new Date().toISOString().split('T')[0]),
           productId: row.product_id,
-          productName: row.products?.name || 'Product',
+          productName: row.product_name || 'Snack',
           productionRunId: row.production_run_id,
-          packagingItemId: row.packaging_item_id,
-          packetSize: row.packet_size,
-          packetsPacked: Number(row.packets_packed) || 0,
+          packagingItemId: row.packaging_item_id || row.packet_type_id,
+          packetSize: row.packet_size || 'Standard',
+          packetsPacked: Number(row.quantity_packed ?? row.packets_packed) || 0,
           coversConsumed: Number(row.covers_consumed) || 0,
           coverUnitCost: Number(row.cover_unit_cost) || 0,
           packagingCost: Number(row.packaging_cost) || 0,
           packingLabourRate: Number(row.packing_labour_rate) || 0,
           packingLabourCost: Number(row.packing_labour_cost) || 0,
-          totalPackingCost: Number(row.total_packing_cost) || 0,
+          totalPackingCost: Number(row.total_packing_cost ?? row.total_cost) || 0,
           weightPackedKg: Number(row.weight_packed_kg) || 0,
-          operatorName: row.operator_name,
+          operatorName: row.operator_name || row.operator || 'Staff',
           notes: row.notes,
-          createdAt: row.created_at,
+          createdAt: row.created_at || row.packed_at,
         }));
+
+        if (options?.productId) {
+          records = records.filter((r: any) => r.productId === options.productId);
+        }
+        if (options?.date) {
+          records = records.filter((r: any) => r.packingDate === options.date);
+        }
+
+        return records;
       },
       { ttl: 60 * 1000 }
     );
