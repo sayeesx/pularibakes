@@ -589,8 +589,8 @@ ${phoneEmailLine ? `${phoneEmailLine}\n` : ''}${taxLine ? `${taxLine}\n` : ''}${
     return sales.filter((s) => {
       const matchesSearch =
         searchQuery === '' ||
-        s.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.customer_name && s.customer_name.toLowerCase().includes(searchQuery.toLowerCase()));
+        (s.product_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.customer_name && (s.customer_name || '').toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesDate =
         selectedDateFilter === '' || s.sale_date === selectedDateFilter;

@@ -624,15 +624,15 @@ export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
 
   const filteredProducts = products.filter((p) => {
     const matchSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()));
+      (p?.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
+      (p?.sku && (p.sku || '').toLowerCase().includes((search || '').toLowerCase()));
 
     if (!matchSearch) return false;
     if (filterActive === 'active') return p.isActive;
     if (filterActive === 'inactive') return !p.isActive;
 
     if (selectedCategory !== 'all') {
-      const cat = getProductCategory(p.name);
+      const cat = getProductCategory(p?.name || '');
       if (cat !== selectedCategory) return false;
     }
 

@@ -16,9 +16,9 @@ export const StockLedgerView: React.FC<StockLedgerViewProps> = ({ movements }) =
   const filteredMovements = useMemo(() => {
     return movements.filter((m) => {
       const matchesSearch =
-        m.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (m.reason && m.reason.toLowerCase().includes(searchTerm.toLowerCase()));
+        (m.itemName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (m.reference || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (m.reason && (m.reason || '').toLowerCase().includes(searchTerm.toLowerCase()));
 
       if (!matchesSearch) return false;
 

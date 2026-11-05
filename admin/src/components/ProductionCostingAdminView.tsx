@@ -505,7 +505,7 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
   // Filtered by search
   const filteredProductCosts = useMemo(() => {
     return productCosts.filter((p) =>
-      p.productName.toLowerCase().includes(search.toLowerCase())
+      (p?.productName || '').toLowerCase().includes((search || '').toLowerCase())
     );
   }, [productCosts, search]);
 

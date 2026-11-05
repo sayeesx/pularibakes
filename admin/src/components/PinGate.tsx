@@ -106,7 +106,7 @@ export const PinGate: React.FC = () => {
 
       {/* Main PIN Prompt Box */}
       <div className={`w-full max-w-sm flex flex-col items-center my-auto transition-transform ${shake ? 'animate-bounce' : ''}`}>
-        <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-md border-2 border-pulari-gold mb-5">
+        <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-md border-2 border-pulari-gold mb-6">
           <img
             src="/pulari-logo.jpg"
             alt="Pulari Bakes"
@@ -114,14 +114,7 @@ export const PinGate: React.FC = () => {
           />
         </div>
 
-        <h1 className="text-lg font-bold text-stone-900 dark:text-white text-center mb-1">
-          {language === 'ml' ? 'അഡ്മിൻ പിൻ നൽകുക' : 'Enter Admin PIN'}
-        </h1>
-        <p className="text-xs text-stone-500 dark:text-stone-400 text-center mb-6">
-          {language === 'ml' ? 'തുടരുന്നതിനായി നിങ്ങളുടെ 6 അക്ക പിൻ അടിക്കുക' : 'Enter your 6-digit PIN to access console'}
-        </p>
-
-        {/* 6 Individual OTP Boxes */}
+        {/* 6 Individual Square OTP Boxes */}
         <div className="flex justify-center gap-2 sm:gap-2.5 mb-6 w-full">
           {digits.map((digit, index) => (
             <input
@@ -135,7 +128,7 @@ export const PinGate: React.FC = () => {
               onChange={(e) => handleDigitChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
               onPaste={handlePaste}
-              className={`w-10 h-13 sm:w-12 sm:h-15 text-center text-lg sm:text-xl font-bold rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1C1819] text-stone-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pulari-gold transition-all ${
+              className={`w-11 h-11 sm:w-13 sm:h-13 aspect-square text-center text-xl sm:text-2xl font-bold rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1C1819] text-stone-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-pulari-gold transition-all ${
                 errorMsg ? 'border-red-500 ring-1 ring-red-500' : ''
               }`}
             />

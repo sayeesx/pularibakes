@@ -69,7 +69,7 @@ export const AddPurchaseModal: React.FC<AddPurchaseModalProps> = ({
       .filter((ing) => ing.isActive)
       .filter((ing) => {
         if (!searchTerm.trim()) return true;
-        return ing.name.toLowerCase().includes(searchTerm.toLowerCase());
+        return (ing.name || '').toLowerCase().includes(searchTerm.toLowerCase());
       });
   }, [validIngredients, searchTerm]);
 

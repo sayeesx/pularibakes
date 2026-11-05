@@ -84,8 +84,8 @@ export const SpecialMixturesAdminView: React.FC<SpecialMixturesAdminViewProps> =
   const filteredMixtures = useMemo(() => {
     return mixtures.filter((m) => {
       const matchesSearch =
-        m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.code && m.code.toLowerCase().includes(searchQuery.toLowerCase()));
+        (m.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (m.code && (m.code || '').toLowerCase().includes(searchQuery.toLowerCase()));
 
       if (!matchesSearch) return false;
 

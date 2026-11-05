@@ -101,7 +101,7 @@ export const PrintPurchaseListModal: React.FC<PrintPurchaseListModalProps> = ({
       .filter((ing) => {
         if (!searchTerm.trim()) return true;
         const q = searchTerm.toLowerCase();
-        return ing.name.toLowerCase().includes(q) || ing.category.toLowerCase().includes(q);
+        return (ing.name || '').toLowerCase().includes(q) || (ing.category || '').toLowerCase().includes(q);
       });
   }, [ingredients, filterMode, searchTerm]);
 

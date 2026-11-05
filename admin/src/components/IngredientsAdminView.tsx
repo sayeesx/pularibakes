@@ -445,7 +445,7 @@ export const IngredientsAdminView: React.FC<IngredientsAdminViewProps> = ({
   }, [ingredients]);
 
   const filteredIngredients = visibleIngredients.filter((ing) => {
-    const matchSearch = ing.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = (ing.name || '').toLowerCase().includes((search || '').toLowerCase());
     if (!matchSearch) return false;
 
     if (filterCategory === 'basic') return ing.category === 'basic';
@@ -672,7 +672,7 @@ export const IngredientsAdminView: React.FC<IngredientsAdminViewProps> = ({
                   {(() => {
                     const lastInward = stockMovements.find(
                       (m) =>
-                        (m.itemId === ing.id || m.itemName.toLowerCase() === ing.name.toLowerCase()) &&
+                        (m.itemId === ing.id || ((m.itemName || '').toLowerCase() === (ing.name || '').toLowerCase())) &&
                         (m.movementType === 'in' || m.movementType === 'purchase' || m.movementType === 'opening' || m.quantity > 0)
                     );
                     const lastStockTotal = lastInward
@@ -947,7 +947,7 @@ export const IngredientsAdminView: React.FC<IngredientsAdminViewProps> = ({
                 const q = packSearch.toLowerCase();
                 return (
                   (p.productName || '').toLowerCase().includes(q) ||
-                  p.sizeLabel.toLowerCase().includes(q)
+                  (p.sizeLabel || '').toLowerCase().includes(q)
                 );
               })
               .map((item) => {

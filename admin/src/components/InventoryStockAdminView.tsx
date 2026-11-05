@@ -84,8 +84,8 @@ export const InventoryStockAdminView: React.FC<InventoryStockAdminViewProps> = (
       const q = search.toLowerCase().trim();
       const matchSearch =
         !q ||
-        p.name.toLowerCase().includes(q) ||
-        (p.sku && p.sku.toLowerCase().includes(q));
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.sku && (p.sku || '').toLowerCase().includes(q));
 
       if (!matchSearch) return false;
 

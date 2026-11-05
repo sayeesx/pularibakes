@@ -32,7 +32,7 @@ export const IngredientDetailModal: React.FC<IngredientDetailModalProps> = ({
 
   const isOil = useMemo(() => {
     if (!ingredient) return false;
-    const n = ingredient.name.toLowerCase();
+    const n = (ingredient.name || '').toLowerCase();
     return n.includes('ഓയിൽ') || n.includes('oil');
   }, [ingredient]);
 
@@ -119,7 +119,7 @@ export const IngredientDetailModal: React.FC<IngredientDetailModalProps> = ({
 
       // Check if matches any product name
       for (const p of products) {
-        if (reason.toLowerCase().includes(p.name.toLowerCase()) || ref.toLowerCase().includes(p.name.toLowerCase())) {
+        if (p?.name && (reason.toLowerCase().includes(p.name.toLowerCase()) || ref.toLowerCase().includes(p.name.toLowerCase()))) {
           prodName = p.name;
           break;
         }
