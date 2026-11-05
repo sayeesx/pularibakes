@@ -42,3 +42,4 @@ if (fs.existsSync(rootDist)) {
 fs.cpSync(sourceDist, rootDist, { recursive: true });
 
 console.log(`✓ Build completed successfully. Output ready in ./dist`);
+

@@ -2,8 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import { ThemeProvider } from './context/ThemeContext';
+import { LanguageProvider } from './context/LanguageContext';
 import { AuthProvider } from './context/AuthContext';
 import { FeedbackProvider } from './context/FeedbackContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
 // Prevent mouse wheel from incrementing/decrementing number inputs while keeping manual entry intact
@@ -35,13 +37,16 @@ document.addEventListener(
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <AuthProvider>
-        <FeedbackProvider>
-          <App />
-        </FeedbackProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <FeedbackProvider>
+              <App />
+            </FeedbackProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
-
