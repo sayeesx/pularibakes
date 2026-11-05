@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="msapplication-TileColor" content="#C6382B" />
+    <meta name="msapplication-TileImage" content="/android-chrome-192x192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#C6382B" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Pulari Bakes" />
+    <meta name="description" content="Production & Inventory Management for Pulari Bakes" />
+    
+    <!-- Google Fonts: Plus Jakarta Sans, Anek Malayalam, Manjari & Noto Sans Malayalam -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Anek+Malayalam:wght@400;500;600;700;800&family=Manjari:wght@400;700&family=Noto+Sans+Malayalam:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    
+    <style>
+      .pwa-preloader {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #F8F9FA;
+        opacity: 0;
+        animation: pwaPreloaderFadeIn 0.25s ease 180ms forwards;
+      }
+      .pwa-spinner {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: 3px solid #E5E7EB;
+        border-top-color: #C6382B;
+        animation: pwaPreloaderSpin 0.75s linear infinite;
+      }
+      @keyframes pwaPreloaderSpin {
+        to { transform: rotate(360deg); }
+      }
+      @keyframes pwaPreloaderFadeIn {
+        to { opacity: 1; }
+      }
+      @media (prefers-color-scheme: dark) {
+        .pwa-preloader {
+          background-color: #141212;
+        }
+        .pwa-spinner {
+          border-color: #2E2828;
+          border-top-color: #F28C28;
+        }
+      }
+    </style>
+    
+    <title>Pulari Bakes: Production & Inventory</title>
+  </head>
+  <body class="bg-canvas dark:bg-canvas-dark text-charcoal dark:text-stone-100 font-sans antialiased min-h-screen selection:bg-red-100 selection:text-red-900 overflow-x-hidden">
+    <div id="root">
+      <div class="pwa-preloader" aria-label="Loading application">
+        <div class="pwa-spinner"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

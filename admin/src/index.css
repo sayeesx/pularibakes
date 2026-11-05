@@ -1,0 +1,371 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #C6382B;
+  --color-accent: #F59E0B;
+  --color-bg: #F8F9FA;
+  --color-card: #FFFFFF;
+  --color-text: #141212;
+  --color-muted: #6B7280;
+  --color-border: #E5E7EB;
+  --color-warning: #D97706;
+  --color-danger: #DC2626;
+  --ease-apple: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark {
+  --color-primary: #C6382B;
+  --color-accent: #F59E0B;
+  --color-bg: #141212;
+  --color-card: #1E1B1B;
+  --color-text: #FFFFFF;
+  --color-muted: #A39E9B;
+  --color-border: #2E2828;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum" 1;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .font-malayalam {
+    font-family: 'Anek Malayalam', 'Manjari', 'Noto Sans Malayalam', sans-serif !important;
+  }
+
+  .tabular-nums,
+  [data-numeric],
+  .font-inter,
+  .font-mono,
+  input[type="number"],
+  input[inputmode="numeric"] {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    font-feature-settings: "tnum" 1, "zero" 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Universal Number Input Spin Button Removal */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
+  }
+
+  /* Google Material Outlined Input Style */
+  .google-input,
+  .google-modal input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+  .google-modal select,
+  .google-modal textarea {
+    width: 100%;
+    padding: 0.75rem 1rem !important;
+    font-size: 0.9375rem !important;
+    line-height: 1.5 !important;
+    border-radius: 0.75rem !important;
+    border: 1.5px solid #d1d5db !important;
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    outline: none !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  }
+
+  .google-input:focus,
+  .google-modal input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):focus,
+  .google-modal select:focus,
+  .google-modal textarea:focus {
+    border-color: #1a73e8 !important;
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.2) !important;
+    background-color: #ffffff !important;
+  }
+
+  .dark .google-input,
+  .dark .google-modal input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+  .dark .google-modal select,
+  .dark .google-modal textarea {
+    border-color: #3f3a3a !important;
+    background-color: #181515 !important;
+    color: #ffffff !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  .dark .google-input:focus,
+  .dark .google-modal input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):focus,
+  .dark .google-modal select:focus,
+  .dark .google-modal textarea:focus {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25) !important;
+    background-color: #1e1b1b !important;
+  }
+
+  /* Google Material Linear Indeterminate Progress */
+  @keyframes googleProgressAnim {
+    0% {
+      transform: translateX(-100%);
+      width: 25%;
+    }
+    50% {
+      transform: translateX(40%);
+      width: 65%;
+    }
+    100% {
+      transform: translateX(200%);
+      width: 25%;
+    }
+  }
+
+  .google-linear-progress {
+    height: 3px;
+    background: linear-gradient(90deg, #C6382B, #EA580C, #F59E0B, #10B981);
+    animation: googleProgressAnim 1.1s infinite cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, width;
+  }
+
+  body.modal-open,
+  html.modal-open {
+    overflow: hidden !important;
+    touch-action: none !important;
+  }
+
+
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .pt-safe {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  /* Universal scrollbar suppression */
+  *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  * {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+}
+
+.press-scale,
+.press-apple {
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.12s ease, background-color 0.15s ease;
+  will-change: transform;
+}
+
+.press-scale:active,
+.press-apple:active {
+  transform: scale(0.97);
+}
+
+.apple-card {
+  transform: translateZ(0);
+  transition: border-color 0.2s ease, background-color 0.25s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+}
+
+@keyframes epsoSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes epsoPulseGlow {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+    filter: drop-shadow(0 0 6px rgba(198, 56, 43, 0.4));
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 14px rgba(245, 158, 11, 0.6));
+  }
+}
+
+.animate-epso-spin {
+  animation: epsoSpin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.animate-epso-pulse {
+  animation: epsoPulseGlow 2s ease-in-out infinite;
+}
+
+@keyframes dailyOpsEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-daily-ops {
+  animation: dailyOpsEntrance 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Apple Fluid Modal Animations */
+@keyframes appleModalIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(24px);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.01) translateY(-2px);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0px);
+  }
+}
+
+@keyframes appleBackdropIn {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+  }
+}
+
+.animate-apple-modal {
+  animation: appleModalIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity, filter;
+}
+
+.animate-apple-backdrop {
+  animation: appleBackdropIn 0.28s ease-out both;
+}
+
+/* ============================== */
+/* Batch Success Animation Styles */
+/* ============================== */
+
+@keyframes batchSuccessBackdrop {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes batchSuccessContainer {
+  0% { opacity: 0; transform: scale(0.5) translateY(20px); }
+  50% { opacity: 1; transform: scale(1.08) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes batchCircleFill {
+  0% { transform: scale(0); opacity: 0; }
+  40% { transform: scale(1.15); opacity: 1; }
+  60% { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes batchCheckmarkDraw {
+  0% { stroke-dashoffset: 60; opacity: 0; }
+  30% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 1; }
+}
+
+@keyframes batchRipple {
+  0% { transform: scale(0.9); opacity: 0; }
+  30% { opacity: 0.7; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes batchParticleBurst {
+  0% { transform: translate(-50%, -50%) rotate(var(--particle-angle)) translateY(0) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) rotate(var(--particle-angle)) translateY(-42px) scale(0); opacity: 0; }
+}
+
+@keyframes batchConfettiBurst {
+  0% { transform: translate(-50%, -50%) rotate(var(--confetti-angle)) translateY(0) scale(0); opacity: 1; }
+  50% { transform: translate(-50%, -50%) rotate(var(--confetti-angle)) translateY(calc(-1 * var(--confetti-distance))) scale(1.2); opacity: 1; }
+  100% { transform: translate(-50%, -50%) rotate(var(--confetti-angle)) translateY(calc(-1 * var(--confetti-distance) - 10px)) scale(0); opacity: 0; }
+}
+
+@keyframes batchSuccessText {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.batch-success-backdrop {
+  animation: batchSuccessBackdrop 0.25s ease-out both;
+}
+
+.batch-success-container {
+  animation: batchSuccessContainer 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.batch-circle-fill {
+  animation: batchCircleFill 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+.batch-checkmark-path {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: batchCheckmarkDraw 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+
+.batch-ripple-1 {
+  animation: batchRipple 0.9s ease-out 0.2s both;
+}
+.batch-ripple-2 {
+  animation: batchRipple 0.9s ease-out 0.35s both;
+}
+.batch-ripple-3 {
+  animation: batchRipple 0.9s ease-out 0.5s both;
+}
+
+.batch-particle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--particle-color);
+  animation: batchParticleBurst 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--particle-delay) both;
+}
+
+.batch-confetti {
+  width: 5px;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--confetti-color);
+  animation: batchConfettiBurst 0.7s cubic-bezier(0.16, 1, 0.3, 1) var(--confetti-delay) both;
+}
+
+.batch-success-text {
+  animation: batchSuccessText 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+

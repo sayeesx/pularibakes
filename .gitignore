@@ -1,0 +1,60 @@
+# ==============================================================================
+# Pulari Bakes - Root .gitignore
+# Strict protection for credentials, build outputs, backups, and dependencies
+# ==============================================================================
+
+# Credentials & Environment Variables (CRITICAL)
+.env
+.env.*
+*.env
+*.env.local
+*.local
+!*.env.example
+
+# Dependencies
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Production Build Outputs
+dist/
+dist-ssr/
+build/
+*/dist/
+*/build/
+
+# Database Backups & Binary Dumps (Prevent pushing live data)
+*.dump
+*.tar
+*.bak
+*.backup
+*.sqlite
+database/backups/*
+!database/backups/.gitkeep
+
+# Testing & Coverage
+coverage/
+*/coverage/
+.vitest/
+
+# OS and Editor Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.tmp
+
+# Vercel / Netlify Local Caches
+.vercel
+.netlify

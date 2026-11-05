@@ -1,0 +1,284 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #C6382B;
+  --color-accent: #F59E0B;
+  --color-bg: #F8F9FA;
+  --color-card: #FFFFFF;
+  --color-text: #141212;
+  --color-muted: #6B7280;
+  --color-border: #E5E7EB;
+  --color-warning: #D97706;
+  --color-danger: #DC2626;
+  --ease-apple: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark {
+  --color-primary: #C6382B;
+  --color-accent: #F59E0B;
+  --color-bg: #141212;
+  --color-card: #1E1B1B;
+  --color-text: #FFFFFF;
+  --color-muted: #A39E9B;
+  --color-border: #2E2828;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: 'Plus Jakarta Sans', Inter, system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .font-malayalam {
+    font-family: 'Anek Malayalam', 'Manjari', 'Noto Sans Malayalam', 'Plus Jakarta Sans', sans-serif !important;
+  }
+
+  body.modal-open,
+  html.modal-open {
+    overflow: hidden !important;
+    touch-action: none !important;
+  }
+
+
+  /* Support for modern mobile notch / bottom home indicator */
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .pt-safe {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  /* Universal scrollbar removal across all boxes, modals, and pages */
+  *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  * {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+}
+
+/* Interactive states */
+.press-scale,
+.press-apple {
+  will-change: transform;
+}
+
+.press-scale:active,
+.press-apple:active {
+  transform: scale(0.98);
+}
+
+/* Fast GPU rendering cards */
+.apple-card {
+  transform: translateZ(0);
+}
+
+.apple-dropdown {
+  animation: appleDropdownEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top center;
+}
+
+@keyframes appleDropdownEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Brand flame swirl loader keyframes */
+@keyframes epsoSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes epsoPulseGlow {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+    filter: drop-shadow(0 0 6px rgba(198, 56, 43, 0.4));
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 14px rgba(245, 158, 11, 0.6));
+  }
+}
+
+.animate-epso-spin {
+  animation: epsoSpin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.animate-epso-pulse {
+  animation: epsoPulseGlow 2s ease-in-out infinite;
+}
+
+/* ========================================= */
+/* Batch Success Lottie-Like Animation CSS   */
+/* ========================================= */
+
+@keyframes batchSuccessBackdrop {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes batchSuccessContainer {
+  0% { opacity: 0; transform: scale(0.45) translateY(24px); }
+  50% { opacity: 1; transform: scale(1.08) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes batchCircleFill {
+  0% { transform: scale(0); opacity: 0; }
+  45% { transform: scale(1.18); opacity: 1; }
+  70% { transform: scale(0.96); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes batchCheckmarkDraw {
+  0% { stroke-dashoffset: 60; opacity: 0; }
+  30% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 1; }
+}
+
+@keyframes batchRipple {
+  0% { transform: scale(0.85); opacity: 0; }
+  35% { opacity: 0.8; }
+  100% { transform: scale(1.65); opacity: 0; }
+}
+
+@keyframes batchParticleBurst {
+  0% { transform: translate(-50%, -50%) rotate(var(--particle-angle)) translateY(0) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) rotate(var(--particle-angle)) translateY(-46px) scale(0); opacity: 0; }
+}
+
+@keyframes batchConfettiBurst {
+  0% { transform: translate(-50%, -50%) rotate(var(--confetti-angle)) translateY(0) scale(0); opacity: 1; }
+  50% { transform: translate(-50%, -50%) rotate(var(--confetti-angle)) translateY(calc(-1 * var(--confetti-distance))) scale(1.2); opacity: 1; }
+  100% { transform: translate(-50%, -50%) rotate(var(--confetti-angle)) translateY(calc(-1 * var(--confetti-distance) - 12px)) scale(0); opacity: 0; }
+}
+
+@keyframes batchSuccessText {
+  0% { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.batch-success-backdrop {
+  animation: batchSuccessBackdrop 0.25s ease-out both;
+}
+
+.batch-success-container {
+  animation: batchSuccessContainer 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.batch-circle-fill {
+  animation: batchCircleFill 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+.batch-checkmark-path {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: batchCheckmarkDraw 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+
+.batch-ripple-1 {
+  animation: batchRipple 0.9s ease-out 0.2s both;
+}
+.batch-ripple-2 {
+  animation: batchRipple 0.9s ease-out 0.35s both;
+}
+.batch-ripple-3 {
+  animation: batchRipple 0.9s ease-out 0.5s both;
+}
+
+.batch-particle {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--particle-color);
+  animation: batchParticleBurst 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--particle-delay) both;
+}
+
+.batch-confetti {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--confetti-color);
+  animation: batchConfettiBurst 0.7s cubic-bezier(0.16, 1, 0.3, 1) var(--confetti-delay) both;
+}
+
+.batch-success-text {
+  animation: batchSuccessText 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+
+/* ========================================= */
+/* Shimmer Skeleton Animation                */
+/* ========================================= */
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.shimmer-wrapper {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-wrapper::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.5) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 1.6s ease-in-out infinite;
+  content: '';
+  pointer-events: none;
+}
+
+.dark .shimmer-wrapper::after {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
