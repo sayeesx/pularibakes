@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Check, AlertTriangle, ChefHat, Scale, Calendar, User, Info } from 'lucide-react';
+import { X, Check, AlertTriangle, ChefHat, Scale, Calendar, User, Info, Plus, Trash2 } from 'lucide-react';
 import { getRepository } from '../../services';
 import { SpecialMixture, Ingredient, UnitType } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
@@ -91,7 +91,7 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
     };
   }, [isOpen, preSelectedMixtureId]);
 
-  // Update consumed ingredients when mixture or planned quantity changes
+  // Update consumed ingredients when mixture changes
   const handleMixtureChange = (mixtureId: string) => {
     setSelectedMixtureId(mixtureId);
     const mix = mixtures.find((m) => m.id === mixtureId);
@@ -180,6 +180,20 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
     return issues;
   }, [consumedRows, ingredients, language]);
 
+  // Total cost calculation
+  const totalIngredientCost = useMemo(() => {
+    return consumedRows.reduce((acc, row) => {
+      const ing = ingredients.find((i) => i.id === row.ingredientId);
+      const costPerUnit = ing?.avgCostPerUnit || 0;
+      return acc + (row.actualQuantity * costPerUnit);
+    }, 0);
+  }, [consumedRows, ingredients]);
+
+  const costPerUnitYield = useMemo(() => {
+    if (actualQuantity <= 0) return 0;
+    return totalIngredientCost / actualQuantity;
+  }, [totalIngredientCost, actualQuantity]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMixtureId) return;
@@ -241,7 +255,7 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200 dark:border-stone-800 bg-stone-50/60 dark:bg-stone-900/40">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-pulari-primary/10 text-pulari-primary dark:text-pulari-gold">
+            <div className="p-2 rounded-xl bg-pulari-primary/10 text-pulari-primary dark:text-pulari-gold shrink-0">
               <ChefHat className="w-5 h-5" />
             </div>
             <div>
@@ -291,13 +305,13 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                 </select>
                 {selectedMixture && (
                   <div className="mt-1.5 flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
-                    <Info className="w-3.5 h-3.5 text-pulari-primary dark:text-pulari-gold" />
+                    <Info className="w-3.5 h-3.5 text-pulari-primary dark:text-pulari-gold shrink-0" />
                     <span>
                       {language === 'ml' ? 'നിലവിലെ സ്റ്റോക്ക്' : 'Current Stock'}:{' '}
                       <strong className="text-stone-800 dark:text-stone-200">
                         {selectedMixture.currentStock} {selectedMixture.unit}
                       </strong>{' '}
-                      | {language === 'ml' ? 'ശരാശരി ചിലവ്' : 'Avg Cost'}: ₹{selectedMixture.avgCostPerUnit}/{selectedMixture.unit}
+                      | {language === 'ml' ? 'ശരാശരി ചിലവ്' : 'Avg Cost'}: ₹{selectedMixture.avgCostPerUnit.toFixed(2)}/{selectedMixture.unit}
                     </span>
                   </div>
                 )}
@@ -316,10 +330,10 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                       min="0.1"
                       value={plannedQuantity || ''}
                       onChange={(e) => handlePlannedQtyChange(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary"
                       required
                     />
-                    <Scale className="absolute right-3 top-2.5 w-4 h-4 text-stone-400 pointer-events-none" />
+                    <Scale className="absolute right-3 top-3 w-4 h-4 text-stone-400 pointer-events-none" />
                   </div>
                 </div>
 
@@ -334,10 +348,10 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                       min="0.1"
                       value={actualQuantity || ''}
                       onChange={(e) => setActualQuantity(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 font-bold text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary"
                       required
                     />
-                    <Scale className="absolute right-3 top-2.5 w-4 h-4 text-stone-400 pointer-events-none" />
+                    <Scale className="absolute right-3 top-3 w-4 h-4 text-stone-400 pointer-events-none" />
                   </div>
                 </div>
               </div>
@@ -353,10 +367,10 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                       type="date"
                       value={preparationDate}
                       onChange={(e) => setPreparationDate(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary font-medium"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary font-medium"
                       required
                     />
-                    <Calendar className="absolute right-3 top-2.5 w-4 h-4 text-stone-400 pointer-events-none" />
+                    <Calendar className="absolute right-3 top-3 w-4 h-4 text-stone-400 pointer-events-none" />
                   </div>
                 </div>
 
@@ -370,26 +384,27 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                       value={operatorName}
                       onChange={(e) => setOperatorName(e.target.value)}
                       placeholder={language === 'ml' ? 'പേര് നൽകുക' : 'Operator name'}
-                      className="w-full px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary font-medium"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary font-medium"
                       required
                     />
-                    <User className="absolute right-3 top-2.5 w-4 h-4 text-stone-400 pointer-events-none" />
+                    <User className="absolute right-3 top-3 w-4 h-4 text-stone-400 pointer-events-none" />
                   </div>
                 </div>
               </div>
 
               {/* Required Raw Ingredients Table */}
-              <div className="border border-stone-200 dark:border-stone-800 rounded-xl p-3.5 bg-stone-50/50 dark:bg-stone-900/30">
-                <div className="flex items-center justify-between mb-2.5">
+              <div className="border border-stone-200 dark:border-stone-800 rounded-xl p-3.5 bg-stone-50/50 dark:bg-stone-900/30 space-y-2.5">
+                <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-stone-800 dark:text-stone-200">
                     {language === 'ml' ? 'ഉപയോഗിക്കുന്ന ചേരുവകൾ' : 'Raw Ingredients to Deduct'}
                   </span>
                   <button
                     type="button"
                     onClick={addIngredientRow}
-                    className="text-xs font-bold text-pulari-primary dark:text-pulari-gold hover:underline cursor-pointer"
+                    className="flex items-center gap-1 text-xs font-bold text-pulari-primary dark:text-pulari-gold hover:underline cursor-pointer"
                   >
-                    + {language === 'ml' ? 'ചേരുവ ചേർക്കുക' : 'Add Item'}
+                    <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>{language === 'ml' ? 'ചേരുവ ചേർക്കുക' : 'Add Item'}</span>
                   </button>
                 </div>
 
@@ -401,16 +416,23 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                   </p>
                 ) : (
                   <div className="space-y-2">
+                    {/* Header labels for rows */}
+                    <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-stone-400 uppercase tracking-wider px-1">
+                      <div className="col-span-6">{language === 'ml' ? 'ചേരുവ' : 'Ingredient'}</div>
+                      <div className="col-span-3 text-right">{language === 'ml' ? 'സ്റ്റോക്ക്' : 'Stock'}</div>
+                      <div className="col-span-3 text-right">{language === 'ml' ? 'ഉപയോഗം' : 'Qty'}</div>
+                    </div>
+
                     {consumedRows.map((row, idx) => {
                       const ing = ingredients.find((i) => i.id === row.ingredientId);
                       const isShort = ing && ing.currentStock < row.actualQuantity;
                       return (
                         <div
                           key={idx}
-                          className={`flex items-center gap-2 p-2 rounded-lg border text-xs ${
+                          className={`flex items-center gap-2 p-2 rounded-xl border text-xs transition-colors ${
                             isShort
-                              ? 'border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20'
-                              : 'border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800'
+                              ? 'border-red-300 bg-red-50/80 dark:border-red-900/50 dark:bg-red-950/20'
+                              : 'border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-800/80'
                           }`}
                         >
                           <select
@@ -428,34 +450,38 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                                 return copy;
                               });
                             }}
-                            className="flex-1 px-2 py-1.5 rounded-md border border-stone-300 dark:border-stone-700 bg-transparent font-medium"
+                            className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-transparent font-medium truncate"
                           >
                             {ingredients.map((ingItem) => (
                               <option key={ingItem.id} value={ingItem.id}>
-                                {ingItem.name} ({ingItem.currentStock} {ingItem.unit})
+                                {ingItem.name}
                               </option>
                             ))}
                           </select>
 
-                          <div className="flex items-center gap-1 w-28">
+                          <div className="text-[11px] font-semibold text-stone-500 shrink-0 w-16 text-right">
+                            {ing ? `${ing.currentStock} ${ing.unit}` : '-'}
+                          </div>
+
+                          <div className="flex items-center gap-1 w-24 shrink-0">
                             <input
                               type="number"
                               step="0.001"
                               min="0"
                               value={row.actualQuantity || ''}
                               onChange={(e) => updateActualIngredientQty(idx, parseFloat(e.target.value) || 0)}
-                              className="w-full px-2 py-1.5 rounded-md border border-stone-300 dark:border-stone-700 bg-transparent text-right font-bold"
+                              className="w-full px-2 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-transparent text-right font-bold text-stone-900 dark:text-stone-100"
                             />
-                            <span className="text-stone-500">{row.unit}</span>
+                            <span className="text-stone-500 text-[11px] font-medium">{row.unit}</span>
                           </div>
 
                           <button
                             type="button"
                             onClick={() => removeIngredientRow(idx)}
-                            className="text-stone-400 hover:text-red-500 p-1 cursor-pointer"
+                            className="text-stone-400 hover:text-red-500 p-1 rounded transition-colors cursor-pointer shrink-0"
                             title={t.delete}
                           >
-                            <X className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       );
@@ -463,9 +489,24 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                   </div>
                 )}
 
+                {/* Live Cost Summary preview */}
+                {consumedRows.length > 0 && (
+                  <div className="pt-2 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between text-xs">
+                    <span className="text-stone-500 dark:text-stone-400">
+                      {language === 'ml' ? 'കണക്കാക്കിയ ചിലവ്' : 'Estimated Cost'}:
+                    </span>
+                    <span className="font-bold text-stone-900 dark:text-stone-100">
+                      ₹{totalIngredientCost.toFixed(2)}{' '}
+                      <span className="text-[11px] text-stone-400 font-normal">
+                        (≈ ₹{costPerUnitYield.toFixed(2)}/{selectedMixture?.unit || 'kg'})
+                      </span>
+                    </span>
+                  </div>
+                )}
+
                 {/* Stock Shortage Warning */}
                 {stockIssues.length > 0 && (
-                  <div className="mt-3 p-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-start gap-2 text-xs text-red-700 dark:text-red-400">
+                  <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-start gap-2 text-xs text-red-700 dark:text-red-400">
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                     <div>
                       <p className="font-bold">
@@ -491,7 +532,7 @@ export const PrepareMixtureModal: React.FC<PrepareMixtureModalProps> = ({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder={language === 'ml' ? 'പ്രത്യേക നിർദ്ദേശങ്ങൾ...' : 'Special notes...'}
-                  className="w-full px-3.5 py-2 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary font-medium"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-pulari-primary font-medium"
                 />
               </div>
             </>

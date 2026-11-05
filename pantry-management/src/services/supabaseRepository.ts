@@ -55,7 +55,7 @@ export class SupabaseRepository implements IEpsoRepository {
       `special_mixtures_${includeInactive}`,
       async () => {
         const client = this.checkClient();
-        let query = client.from('special_mixtures').select('*, special_mixture_recipes(*)').order('name', { ascending: true });
+        let query = client.from('special_mixtures').select('*, special_mixture_recipes(*, special_mixture_recipe_items(*, ingredients(name, unit, avg_cost_per_unit)))').order('name', { ascending: true });
         if (!includeInactive) {
           query = query.eq('is_active', true);
         }
@@ -84,7 +84,16 @@ export class SupabaseRepository implements IEpsoRepository {
                   instructions: activeRecipe.instructions,
                   estimatedCost: Number(activeRecipe.estimated_cost) || 0,
                   isActive: activeRecipe.is_active,
-                  items: [],
+                  items: (activeRecipe.special_mixture_recipe_items || []).map((i: any) => ({
+                    id: i.id,
+                    recipeId: i.recipe_id,
+                    ingredientId: i.ingredient_id,
+                    ingredientName: i.ingredients?.name || 'Ingredient',
+                    quantity: Number(i.quantity) || 0,
+                    unit: i.unit,
+                    avgCostPerUnit: Number(i.ingredients?.avg_cost_per_unit) || 0,
+                    totalCost: (Number(i.quantity) || 0) * (Number(i.ingredients?.avg_cost_per_unit) || 0),
+                  })),
                 }
               : undefined,
             createdAt: row.created_at,
@@ -417,10 +426,10 @@ export class SupabaseRepository implements IEpsoRepository {
         return (data || []).map((row: any) => ({
           id: row.id,
           name: row.name,
-          sku: row.sku || undefined,
+          sku: row.code || row.sku || undefined,
           unit: row.unit,
           currentStock: Number(row.current_stock || 0),
-          wholesalePrice: row.wholesale_price ? Number(row.wholesale_price) : undefined,
+          wholesalePrice: Number(row.avg_cost_per_unit ?? row.wholesale_price) || undefined,
           isActive: row.is_active,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
@@ -438,10 +447,10 @@ export class SupabaseRepository implements IEpsoRepository {
     return {
       id: data.id,
       name: data.name,
-      sku: data.sku || undefined,
+      sku: data.code || data.sku || undefined,
       unit: data.unit,
       currentStock: Number(data.current_stock || 0),
-      wholesalePrice: data.wholesalePrice ? Number(data.wholesale_price) : undefined,
+      wholesalePrice: Number(data.avg_cost_per_unit ?? data.wholesale_price) || undefined,
       isActive: data.is_active,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
@@ -454,10 +463,10 @@ export class SupabaseRepository implements IEpsoRepository {
       .from('products')
       .insert({
         name: data.name.trim(),
-        sku: data.sku?.trim() || null,
+        code: data.sku?.trim() || null,
         unit: data.unit || 'kg',
         current_stock: data.currentStock || 0,
-        wholesale_price: data.wholesalePrice || 0,
+        avg_cost_per_unit: data.wholesalePrice || 0,
         is_active: data.isActive !== false,
       })
       .select()
@@ -478,10 +487,10 @@ export class SupabaseRepository implements IEpsoRepository {
     return {
       id: created.id,
       name: created.name,
-      sku: created.sku || undefined,
+      sku: created.code || created.sku || undefined,
       unit: created.unit,
       currentStock: Number(created.current_stock || 0),
-      wholesalePrice: created.wholesale_price ? Number(created.wholesale_price) : undefined,
+      wholesalePrice: Number(created.avg_cost_per_unit ?? created.wholesale_price) || undefined,
       isActive: created.is_active,
       createdAt: created.created_at,
       updatedAt: created.updated_at,
@@ -492,10 +501,10 @@ export class SupabaseRepository implements IEpsoRepository {
     const client = this.checkClient();
     const updates: any = { updated_at: new Date().toISOString() };
     if (data.name !== undefined) updates.name = data.name.trim();
-    if (data.sku !== undefined) updates.sku = data.sku.trim();
+    if (data.sku !== undefined) updates.code = data.sku.trim();
     if (data.unit !== undefined) updates.unit = data.unit;
     if (data.currentStock !== undefined) updates.current_stock = data.currentStock;
-    if (data.wholesalePrice !== undefined) updates.wholesale_price = data.wholesalePrice;
+    if (data.wholesalePrice !== undefined) updates.avg_cost_per_unit = data.wholesalePrice;
     if (data.isActive !== undefined) updates.is_active = data.isActive;
 
     const { data: updated, error } = await client
@@ -520,10 +529,10 @@ export class SupabaseRepository implements IEpsoRepository {
     return {
       id: updated.id,
       name: updated.name,
-      sku: updated.sku || undefined,
+      sku: updated.code || updated.sku || undefined,
       unit: updated.unit,
       currentStock: Number(updated.current_stock || 0),
-      wholesalePrice: updated.wholesale_price ? Number(updated.wholesale_price) : undefined,
+      wholesalePrice: Number(updated.avg_cost_per_unit ?? updated.wholesale_price) || undefined,
       isActive: updated.is_active,
       createdAt: updated.created_at,
       updatedAt: updated.updated_at,
@@ -633,7 +642,7 @@ export class SupabaseRepository implements IEpsoRepository {
         min_stock: data.minStock || 0,
         avg_cost_per_unit: data.avgCostPerUnit || 0,
         is_active: data.isActive !== false,
-        notes: data.notes || null,
+        // notes column omitted (not in schema)
       })
       .select()
       .single();
@@ -674,7 +683,7 @@ export class SupabaseRepository implements IEpsoRepository {
     if (data.minStock !== undefined) updates.min_stock = data.minStock;
     if (data.avgCostPerUnit !== undefined) updates.avg_cost_per_unit = data.avgCostPerUnit;
     if (data.isActive !== undefined) updates.is_active = data.isActive;
-    if (data.notes !== undefined) updates.notes = data.notes;
+    // notes omitted
 
     const { data: updated, error } = await client
       .from('ingredients')
@@ -858,8 +867,8 @@ export class SupabaseRepository implements IEpsoRepository {
             productId: row.product_id,
             productName: row.products?.name || 'Snack Product',
             version: row.version,
-            baseOutputQuantity: Number(row.base_output_quantity),
-            baseOutputUnit: row.base_output_unit,
+            baseOutputQuantity: Number(row.output_quantity || row.base_output_quantity || 10),
+            baseOutputUnit: row.output_unit || row.base_output_unit || 'kg',
             instructions: row.instructions || undefined,
             notes: row.notes || undefined,
             isActive: row.is_active,
@@ -908,12 +917,11 @@ export class SupabaseRepository implements IEpsoRepository {
         .from('recipes')
         .insert({
           product_id: data.productId,
-          version: data.version || 1,
-          base_output_quantity: data.baseOutputQuantity,
-          base_output_unit: data.baseOutputUnit || 'kg',
-          instructions: data.instructions || null,
-          notes: data.notes || null,
-          packets: normalizedPackets,
+          name: data.productName || 'Recipe',
+          output_quantity: data.baseOutputQuantity,
+          output_unit: data.baseOutputUnit || 'kg',
+          // notes column omitted (not in schema)
+          is_active: data.isActive !== false,
         })
         .select()
         .single();

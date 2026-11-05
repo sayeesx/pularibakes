@@ -117,11 +117,11 @@ export async function fetchProducts(force = false): Promise<Product[]> {
     return (data || []).map((row) => ({
       id: row.id,
       name: row.name,
-      sku: row.sku || '',
+      sku: row.code || row.sku || '',
       recipeId: row.recipe_id || '',
       unit: row.unit || 'kg',
       currentStock: Number(row.current_stock) || 0,
-      wholesalePrice: Number(row.wholesale_price) || 0,
+      wholesalePrice: Number(row.avg_cost_per_unit ?? row.wholesale_price) || 0,
       isActive: row.is_active ?? true,
       description: row.description || '',
       createdAt: row.created_at,
@@ -132,13 +132,12 @@ export async function fetchProducts(force = false): Promise<Product[]> {
 
 export async function saveProduct(product: Partial<Product> & { name: string }): Promise<Product> {
   const payload = {
-    name: product.name,
-    sku: product.sku || null,
+    name: product.name.trim(),
+    code: product.sku || null,
     unit: product.unit || 'kg',
     current_stock: product.currentStock ?? 0,
-    wholesale_price: product.wholesalePrice ?? 0,
+    avg_cost_per_unit: product.wholesalePrice ?? 0,
     is_active: product.isActive ?? true,
-    recipe_id: product.recipeId || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -156,10 +155,10 @@ export async function saveProduct(product: Partial<Product> & { name: string }):
     return {
       id: data.id,
       name: data.name,
-      sku: data.sku || '',
+      sku: data.code || data.sku || '',
       unit: data.unit,
       currentStock: Number(data.current_stock) || 0,
-      wholesalePrice: Number(data.wholesale_price) || 0,
+      wholesalePrice: Number(data.avg_cost_per_unit ?? data.wholesale_price) || 0,
       isActive: data.is_active,
       createdAt: data.created_at,
     };
@@ -201,7 +200,7 @@ export async function deleteProduct(id: string): Promise<void> {
   }
 
   // 2. Unlink recipe_id on products to prevent circular dependency
-  await supabase.from('products').update({ recipe_id: null }).eq('id', id);
+  // unlinking recipe_id omitted (not in schema)
 
   // 3. Delete recipes associated with this product
   await supabase.from('recipes').delete().eq('product_id', id);
@@ -226,7 +225,7 @@ export async function adjustProductStock(
 ): Promise<void> {
   const { data: prod, error: fetchErr } = await supabase
     .from('products')
-    .select('id, name, unit, current_stock, wholesale_price')
+    .select('id, name, unit, current_stock, avg_cost_per_unit')
     .eq('id', productId)
     .single();
 
@@ -261,7 +260,7 @@ export async function adjustProductStock(
       unit: prod.unit,
       previous_balance: prevStock,
       new_balance: newStock,
-      cost_per_unit: prod.wholesale_price,
+      cost_per_unit: prod.avg_cost_per_unit,
       reference: `ADMIN-PRD-ADJ-${Date.now().toString().slice(-6)}`,
       operator_name: operatorName,
       reason,
@@ -305,7 +304,7 @@ export async function saveIngredient(ingredient: Partial<Ingredient> & { name: s
     min_stock: ingredient.minStock ?? 0,
     avg_cost_per_unit: ingredient.avgCostPerUnit ?? 0,
     is_active: ingredient.isActive ?? true,
-    notes: ingredient.notes || null,
+    // notes omitted
     updated_at: new Date().toISOString(),
   };
 
@@ -593,8 +592,8 @@ export async function fetchRecipes(force = false): Promise<Recipe[]> {
         productId: r.product_id,
         productName: r.products?.name || 'Unknown Snack',
         version: r.version || 1,
-        baseOutputQuantity: Number(r.base_output_quantity) || 1,
-        baseOutputUnit: r.base_output_unit || 'kg',
+        baseOutputQuantity: Number(r.output_quantity || r.base_output_quantity) || 1,
+        baseOutputUnit: r.output_unit || r.base_output_unit || 'kg',
         instructions: r.instructions || '',
         notes: r.notes || '',
         isActive: r.is_active ?? true,
@@ -630,12 +629,10 @@ export async function saveRecipe(
       .from('recipes')
       .insert({
         product_id: recipe.productId,
-        version: recipe.version || 1,
-        base_output_quantity: recipe.baseOutputQuantity,
-        base_output_unit: recipe.baseOutputUnit,
-        instructions: recipe.instructions || null,
+        name: recipe.productName || 'Recipe',
+        output_quantity: recipe.baseOutputQuantity,
+        output_unit: recipe.baseOutputUnit || 'kg',
         notes: recipe.notes || null,
-        packets: normalizedPackets,
         is_active: recipe.isActive ?? true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -647,7 +644,7 @@ export async function saveRecipe(
     recipeId = newRec.id;
 
     // Link recipe to product
-    await supabase.from('products').update({ recipe_id: recipeId }).eq('id', recipe.productId);
+    // link recipe_id on products omitted (not in schema)
   } else {
     const { error: recErr } = await supabase
       .from('recipes')
@@ -666,7 +663,7 @@ export async function saveRecipe(
 
     // Ensure product is linked
     if (recipe.productId) {
-      await supabase.from('products').update({ recipe_id: recipeId }).eq('id', recipe.productId);
+      // link recipe_id on products omitted (not in schema)
     }
 
     // Remove old recipe items & packets

@@ -10,16 +10,19 @@ import {
   TbSearch,
   TbAlertTriangle,
   TbCheck,
+  TbBuildingStore,
 } from 'react-icons/tb';
+import { RecordPurchaseModal } from '../components/ingredients/RecordPurchaseModal';
 
 export const IngredientsPage: React.FC = () => {
-  const { repo, dataVersion } = useApp();
+  const { repo, dataVersion, triggerRefresh } = useApp();
   const { language } = useLanguage();
 
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -50,7 +53,7 @@ export const IngredientsPage: React.FC = () => {
   }, [ingredients, searchTerm, showInactive]);
 
   return (
-    <div className="space-y-4 max-w-lg md:max-w-5xl mx-auto pb-10">
+    <div className="space-y-4 max-w-lg md:max-w-5xl mx-auto pb-10 animate-fade-in">
       {/* Header and Inactive Filter Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -67,19 +70,30 @@ export const IngredientsPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowInactive(!showInactive)}
-          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-colors self-start sm:self-auto ${
-            showInactive
-              ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-              : 'bg-stone-100 dark:bg-[#1E1B1B] text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-[#2E2828] hover:text-stone-800 dark:hover:text-stone-200'
-          }`}
-        >
-          {showInactive
-            ? (language === 'ml' ? 'നിർജ്ജീവമായവ ഉൾപ്പെടുത്തിയിരിക്കുന്നു' : 'Showing Inactive')
-            : (language === 'ml' ? 'നിർജ്ജീവമായവ കാണിക്കുക' : 'Show Inactive')}
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setIsPurchaseModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+          >
+            <TbBuildingStore className="w-4 h-4" />
+            <span>{language === 'ml' ? '+ പർച്ചേസ്' : '+ Record Purchase'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowInactive(!showInactive)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-colors ${
+              showInactive
+                ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                : 'bg-stone-100 dark:bg-[#1E1B1B] text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-[#2E2828] hover:text-stone-800 dark:hover:text-stone-200'
+            }`}
+          >
+            {showInactive
+              ? (language === 'ml' ? 'നിർജ്ജീവമായവ ഉൾപ്പെടുത്തിയിരിക്കുന്നു' : 'Showing Inactive')
+              : (language === 'ml' ? 'നിർജ്ജീവമായവ കാണിക്കുക' : 'Show Inactive')}
+          </button>
+        </div>
       </div>
 
       {/* Search Input */}
@@ -98,82 +112,60 @@ export const IngredientsPage: React.FC = () => {
           <TbCarrot className="w-8 h-8 text-stone-400 dark:text-stone-600 mx-auto" />
           <p>
             {searchTerm
-              ? (language === 'ml' ? 'തിരഞ്ഞ ചേരുവ കണ്ടെത്തിയില്ല' : 'No ingredients match your search')
-              : (language === 'ml' ? 'ചേരുവകൾ ഒന്നും രേഖപ്പെടുത്തിയിട്ടില്ല' : 'No ingredients in catalogue')}
+              ? (language === 'ml' ? `"${searchTerm}" എന്ന പേരിൽ ചേരുവകൾ ലഭ്യമല്ല` : `No ingredients found matching "${searchTerm}"`)
+              : (language === 'ml' ? 'ചേരുവകൾ ലഭ്യമല്ല' : 'No ingredients available')}
           </p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {filteredIngredients.map((ing) => {
-            const isLow = ing.minStock > 0 && ing.currentStock <= ing.minStock;
-
+            const isLow = ing.currentStock <= ing.minStock;
             return (
               <Card
                 key={ing.id}
-                padding="sm"
-                className={`flex flex-col justify-between transition-all hover:border-epso-red/50 dark:hover:border-epso-red/50 ${
-                  ing.isActive === false
-                    ? 'opacity-60 bg-stone-50 dark:bg-[#181515] border-dashed'
+                padding="md"
+                className={`flex flex-col justify-between transition-all ${
+                  !ing.isActive
+                    ? 'bg-stone-50/80 dark:bg-[#181515] border-dashed opacity-75'
                     : isLow
-                    ? 'border-red-300 dark:border-red-900/60 bg-red-50/20 dark:bg-red-950/10'
-                    : ''
+                    ? 'border-amber-300 dark:border-amber-800/80 bg-amber-50/20 dark:bg-amber-950/10'
+                    : 'hover:border-stone-300 dark:hover:border-stone-700'
                 }`}
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-stone-100 dark:bg-[#221E1E] border border-stone-200/80 dark:border-[#2C2727] flex items-center justify-center shrink-0 shadow-2xs">
-                        <img
-                          src="/pulari-logo.jpg"
-                          alt=""
-                          className="w-6 h-6 object-contain opacity-50 dark:opacity-40 select-none pointer-events-none"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        {ing.isActive === false && (
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300">
-                              Inactive
-                            </span>
-                          </div>
-                        )}
-
-                        <h3 className="text-base font-bold text-stone-900 dark:text-white leading-snug break-words font-malayalam">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-bold text-stone-900 dark:text-white text-sm truncate font-malayalam">
                           {ing.name}
                         </h3>
+                        {!ing.isActive && (
+                          <span className="text-[10px] font-bold text-stone-500 bg-stone-200 dark:bg-stone-800 px-1.5 py-0.5 rounded">
+                            Inactive
+                          </span>
+                        )}
                       </div>
+                      <p className="text-[11px] text-stone-400 dark:text-stone-500 font-mono">
+                        {language === 'ml' ? 'മിനിമം സ്റ്റോക്ക്' : 'Min Stock'}: {ing.minStock} {ing.unit}
+                      </p>
                     </div>
 
                     <div className="text-right shrink-0">
-                      <span
-                        className={`text-lg font-black ${
-                          isLow ? 'text-red-600 dark:text-red-400' : 'text-stone-900 dark:text-white'
+                      <div
+                        className={`text-base font-black ${
+                          ing.currentStock <= 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : isLow
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-stone-900 dark:text-white'
                         }`}
                       >
-                        {ing.currentStock}
-                      </span>
-                      <span className="text-xs font-bold text-stone-500 dark:text-stone-400 ml-1">
-                        {ing.unit}
-                      </span>
-                      {isLow && (
-                        <p className="text-[10px] text-red-600 dark:text-red-400 font-extrabold flex items-center justify-end gap-0.5">
-                          <TbAlertTriangle className="w-3 h-3" />
-                          <span>{language === 'ml' ? 'കുറഞ്ഞ സ്റ്റോക്ക്' : 'Low Stock'}</span>
-                        </p>
-                      )}
+                        {ing.currentStock} {ing.unit}
+                      </div>
+                      <p className="text-[10px] text-stone-400 font-semibold">
+                        ₹{ing.avgCostPerUnit.toFixed(2)}/{ing.unit}
+                      </p>
                     </div>
-                  </div>
-
-                  {/* Stock context & notes */}
-                  <div className="mt-2.5 pt-2 border-t border-charcoal-border/40 dark:border-[#2E2828] flex items-center justify-between text-[11px] text-stone-500 dark:text-stone-400">
-                    <span>
-                      {language === 'ml' ? 'അളവ് യൂണിറ്റ്' : 'Unit'}: <strong className="text-stone-800 dark:text-stone-200">{ing.unit}</strong>
-                    </span>
-                    {ing.minStock > 0 && (
-                      <span>
-                        {language === 'ml' ? 'അലേർട്ട് പരിധി' : 'Alert'}: {ing.minStock} {ing.unit}
-                      </span>
-                    )}
                   </div>
 
                   {ing.notes && (
@@ -183,7 +175,7 @@ export const IngredientsPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Stock Status Footer (Read-Only) */}
+                {/* Stock Status Footer */}
                 <div className="flex items-center justify-between pt-2.5 mt-3 border-t border-charcoal-border/50 dark:border-[#2E2828] text-xs">
                   {ing.currentStock <= 0 ? (
                     <span className="text-[11px] font-extrabold text-red-600 dark:text-red-400 flex items-center gap-1">
@@ -211,6 +203,13 @@ export const IngredientsPage: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* Record Purchase Modal */}
+      <RecordPurchaseModal
+        isOpen={isPurchaseModalOpen}
+        onClose={() => setIsPurchaseModalOpen(false)}
+        onSuccess={() => triggerRefresh()}
+      />
     </div>
   );
 };

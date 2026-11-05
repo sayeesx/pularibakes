@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Product, UnitType, Ingredient, Recipe, PacketType, RecipePacket } from '../types';
 import {
   FiPlus,
@@ -20,6 +20,9 @@ import {
   FiSliders,
   FiArrowUp,
   FiArrowDown,
+  FiUpload,
+  FiDownload,
+  FiRefreshCw,
 } from 'react-icons/fi';
 import { saveProduct, deleteProduct, saveRecipe, deleteRecipe, fetchPacketTypes, adjustProductStock } from '../services/supabase';
 import { PrintPurchaseListModal } from './PrintPurchaseListModal';
@@ -27,6 +30,7 @@ import { useLockBodyScroll } from '../hooks/useLockBodyScroll';
 import { createPortal } from 'react-dom';
 import { ThemeSelect } from './ThemeSelect';
 import { useFeedback } from '../context/FeedbackContext';
+import { parseProductsExcel, downloadProductsTemplate } from '../utils/excelImport';
 
 interface ProductsAdminViewProps {
   products: Product[];
@@ -83,6 +87,54 @@ export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
 
   const [search, setSearch] = useState('');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
+  const excelInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingExcel(true);
+    try {
+      const parsed = await parseProductsExcel(file);
+      if (parsed.length === 0) {
+        showToast('എക്സലിൽ സാധുവായ ഉൽപ്പന്ന വിവരങ്ങൾ കണ്ടെത്തിയില്ല', 'warning');
+        setIsImportingExcel(false);
+        if (excelInputRef.current) excelInputRef.current.value = '';
+        return;
+      }
+
+      let count = 0;
+      for (const p of parsed) {
+        const existing = products.find(
+          (prod) =>
+            prod.name.trim().toLowerCase() === p.name.trim().toLowerCase() ||
+            (p.sku && prod.sku && prod.sku.trim().toLowerCase() === p.sku.trim().toLowerCase())
+        );
+
+        await saveProduct({
+          id: existing?.id,
+          name: p.name,
+          sku: p.sku || existing?.sku,
+          unit: (p.unit as UnitType) || existing?.unit || 'kg',
+          currentStock: p.currentStock,
+          wholesalePrice: p.wholesalePrice,
+          isActive: true,
+        });
+        count++;
+      }
+
+      showToast(`${count} ഉൽപ്പന്നങ്ങൾ എക്സലിൽ നിന്ന് വിജയകരമായി ചേർത്തു/പുതുക്കി`, 'success');
+      onRefresh();
+    } catch (err: any) {
+      console.error('Failed to import products from Excel:', err);
+      showToast(`എക്സൽ ഇറക്കുമതി പരാജയപ്പെട്ടു: ${err?.message || 'Error'}`, 'error');
+    } finally {
+      setIsImportingExcel(false);
+      if (excelInputRef.current) excelInputRef.current.value = '';
+    }
+  };
+
   const [modalOpen, setModalOpen] = useState(false);
   const [purchaseListModalOpen, setPurchaseListModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -563,6 +615,43 @@ export const ProductsAdminView: React.FC<ProductsAdminViewProps> = ({
               <span>Print Purchase List</span>
             </button>
           )}
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx, .xls, .csv"
+            className="hidden"
+            onChange={handleExcelUpload}
+          />
+
+          <button
+            type="button"
+            onClick={() => downloadProductsTemplate(products)}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 dark:border-[#2E2828] bg-white dark:bg-[#1E1B1B] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#282323] font-bold text-xs shadow-2xs press-apple transition-colors cursor-pointer"
+            title="Download products Excel sample template"
+          >
+            <FiDownload className="w-3.5 h-3.5 text-stone-500" />
+            <span>Template</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => excelInputRef.current?.click()}
+            disabled={isImportingExcel}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm press-apple transition-colors cursor-pointer disabled:opacity-50"
+            title="Import products catalogue from Excel"
+          >
+            {isImportingExcel ? (
+              <>
+                <FiRefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Importing...</span>
+              </>
+            ) : (
+              <>
+                <FiUpload className="w-3.5 h-3.5" />
+                <span>Upload Excel</span>
+              </>
+            )}
+          </button>
           <button
             onClick={openCreateModal}
             className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-epso-red hover:bg-epso-red-hover dark:bg-amber-500 dark:hover:bg-amber-600 text-white dark:text-stone-950 font-bold text-xs shadow-sm press-apple transition-colors cursor-pointer"
