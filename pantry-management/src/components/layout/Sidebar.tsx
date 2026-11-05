@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Package, UtensilsCrossed, Settings, UserCheck, Lock, FlaskConical } from 'lucide-react';
+import { Home, Package, UtensilsCrossed, Settings, UserCheck, Lock } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -12,7 +12,6 @@ export const Sidebar: React.FC = () => {
     { to: '/', label: t.navProduction, icon: Home, end: true },
     { to: '/products', label: t.navProducts, icon: Package, end: false },
     { to: '/ingredients', label: t.navIngredients, icon: UtensilsCrossed, end: false },
-    { to: '/mixtures', label: t.navMixtures, icon: FlaskConical, end: false },
     { to: '/settings', label: t.navSettings, icon: Settings, end: false },
   ];
 
@@ -49,7 +48,9 @@ export const Sidebar: React.FC = () => {
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-bold transition-all press-apple ${
+                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold transition-all press-apple ${
+                      language === 'ml' ? 'text-xs' : 'text-sm'
+                    } ${
                       isActive
                         ? 'bg-pulari-primary text-white shadow-xs'
                         : 'text-stone-700 dark:text-stone-300 hover:bg-stone-100 hover:text-pulari-primary dark:hover:bg-stone-800 dark:hover:text-pulari-gold'

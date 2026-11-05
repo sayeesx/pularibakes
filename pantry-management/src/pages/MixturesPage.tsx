@@ -112,46 +112,6 @@ export const MixturesPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
-      {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-[#181616] p-4 sm:p-5 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-pulari-primary/10 text-pulari-primary dark:text-pulari-gold shrink-0">
-            <FlaskConical className="w-6 h-6 stroke-[2.2]" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-stone-900 dark:text-stone-100 tracking-tight">
-              {language === 'ml' ? 'പ്രത്യേക കൂട്ടുകൾ / മിശ്രിതങ്ങൾ' : 'Special Cooked Mixtures'}
-            </h1>
-            <p className="text-xs sm:text-sm text-stone-500 dark:text-stone-400">
-              {language === 'ml'
-                ? 'പ്ലം കേക്ക്, ചോക്ലേറ്റ്, വിപ്പിംഗ് ക്രീം തുടങ്ങിയ മിശ്രിതങ്ങൾ'
-                : 'Intermediate mixtures prepared and stored for cake & pastry production'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="p-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors cursor-pointer"
-            title={t.refresh}
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openPrepare()}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-pulari-primary text-white font-bold text-xs sm:text-sm hover:bg-pulari-primary/90 transition-all shadow-md active:scale-95 cursor-pointer"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>{language === 'ml' ? 'കൂട്ട് തയ്യാറാക്കുക' : 'Prepare Mixture'}</span>
-          </button>
-        </div>
-      </div>
-
       {/* KPI Stat Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white dark:bg-[#181616] p-4 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-xs flex items-center gap-3">
@@ -321,14 +281,7 @@ export const MixturesPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => openPrepare(mix.id)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-pulari-primary/10 text-pulari-primary dark:text-pulari-gold hover:bg-pulari-primary hover:text-white dark:hover:bg-pulari-gold dark:hover:text-stone-950 text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-xs"
-                    >
-                      <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                      <span>{language === 'ml' ? 'തയ്യാറാക്കുക' : 'Prepare'}</span>
-                    </button>
+                    
                   </div>
                 </div>
               );
@@ -451,13 +404,7 @@ export const MixturesPage: React.FC = () => {
         )}
       </div>
 
-      {/* Prepare Mixture Modal */}
-      <PrepareMixtureModal
-        isOpen={isPrepareModalOpen}
-        onClose={() => setIsPrepareModalOpen(false)}
-        onSuccess={loadData}
-        preSelectedMixtureId={preSelectedId}
-      />
+      
 
       {/* Cancel Batch Confirmation Modal */}
       {cancellingBatch && (

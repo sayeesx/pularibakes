@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Ingredient } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
@@ -6,14 +6,14 @@ import { useApp } from '../../context/AppContext';
 import {
   TbX,
   TbSearch,
-  TbUpload,
-  TbDownload,
+
+
   TbCheck,
   TbRefresh,
   TbBuildingStore,
   TbAlertTriangle,
 } from 'react-icons/tb';
-import { parsePurchasesExcel, downloadPurchasesTemplate } from '../../lib/excelImport';
+
 
 interface RecordPurchaseModalProps {
   isOpen: boolean;
@@ -33,10 +33,10 @@ export const RecordPurchaseModal: React.FC<RecordPurchaseModalProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
-  const [excelSummary, setExcelSummary] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+
+
 
   // Form states: purchase amounts and unit costs for each ingredient
   const [purchaseAmounts, setPurchaseAmounts] = useState<Record<string, string>>({});
@@ -47,7 +47,7 @@ export const RecordPurchaseModal: React.FC<RecordPurchaseModalProps> = ({
 
     let mounted = true;
     setLoading(true);
-    setExcelSummary(null);
+
 
     repo.listIngredients(false)
       .then((data) => {
@@ -91,69 +91,6 @@ export const RecordPurchaseModal: React.FC<RecordPurchaseModalProps> = ({
 
   const handleCostChange = (id: string, val: string) => {
     setPurchaseCosts((prev) => ({ ...prev, [id]: val }));
-  };
-
-  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsParsingExcel(true);
-    setExcelSummary(null);
-
-    try {
-      const { matched, unmatched } = await parsePurchasesExcel(file, ingredients);
-
-      if (matched.length === 0) {
-        addToast(
-          language === 'ml'
-            ? 'എക്സലിൽ നിന്ന് പർച്ചേസ് വിവരങ്ങൾ കണ്ടെത്താൻ കഴിഞ്ഞില്ല'
-            : 'No matching ingredient purchases found in Excel',
-          'warning'
-        );
-        setIsParsingExcel(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
-      }
-
-      setPurchaseAmounts((prev) => {
-        const copy = { ...prev };
-        matched.forEach((m) => {
-          copy[m.ingredientId] = String(m.amount);
-        });
-        return copy;
-      });
-
-      setPurchaseCosts((prev) => {
-        const copy = { ...prev };
-        matched.forEach((m) => {
-          if (m.costPerUnit > 0) {
-            copy[m.ingredientId] = String(m.costPerUnit);
-          }
-        });
-        return copy;
-      });
-
-      const summary = language === 'ml'
-        ? `${matched.length} ചേരുവകളുടെ വിവരങ്ങൾ എക്സലിൽ നിന്ന് ഉൾപ്പെടുത്തി${
-            unmatched.length > 0 ? ` (${unmatched.length} എണ്ണം തിരിച്ചറിഞ്ഞില്ല)` : ''
-          }`
-        : `${matched.length} ingredients loaded from Excel${
-            unmatched.length > 0 ? ` (${unmatched.length} unrecognized)` : ''
-          }`;
-      setExcelSummary(summary);
-      addToast(summary, 'success');
-    } catch (err: any) {
-      console.error('Excel parse failed:', err);
-      addToast(
-        language === 'ml'
-          ? `എക്സൽ പരിശോധന പരാജയപ്പെട്ടു: ${err?.message || 'Error'}`
-          : `Excel check failed: ${err?.message || 'Error'}`,
-        'error'
-      );
-    } finally {
-      setIsParsingExcel(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
   };
 
   const handleSave = async () => {
@@ -231,67 +168,13 @@ export const RecordPurchaseModal: React.FC<RecordPurchaseModalProps> = ({
                 </div>
               </div>
 
-              {/* Excel Action Buttons */}
-              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  className="hidden"
-                  onChange={handleExcelUpload}
-                />
-
-                <button
-                  type="button"
-                  onClick={() => downloadPurchasesTemplate(ingredients)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#1E1B1B] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#282323] text-xs font-bold transition-colors cursor-pointer shadow-2xs"
-                  title="Download sample template"
-                >
-                  <TbDownload className="w-3.5 h-3.5 text-stone-400" />
-                  <span>{language === 'ml' ? 'മാതൃക' : 'Template'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isParsingExcel}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all cursor-pointer shadow-sm disabled:opacity-50"
-                  title="Upload Excel purchase list"
-                >
-                  {isParsingExcel ? (
-                    <>
-                      <TbRefresh className="w-3.5 h-3.5 animate-spin" />
-                      <span>{language === 'ml' ? 'വായിക്കുന്നു...' : 'Parsing...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <TbUpload className="w-3.5 h-3.5" />
-                      <span>{language === 'ml' ? 'എക്സൽ അപ്‌ലോഡ്' : 'Upload Excel'}</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={onClose}
-                  className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer ml-1"
-                >
-                  <TbX className="w-5 h-5" />
-                </button>
-              </div>
+                            <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+              >
+                <TbX className="w-5 h-5" />
+              </button>
             </div>
-
-            {/* Excel Summary Banner */}
-            {excelSummary && (
-              <div className="px-5 py-2.5 bg-emerald-50 dark:bg-emerald-950/40 border-b border-emerald-100 dark:border-emerald-900/40 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
-                <span className="font-bold flex items-center gap-1.5">
-                  <TbCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  {excelSummary}
-                </span>
-                <span className="text-[11px] text-emerald-600 font-medium hidden sm:inline">
-                  പരിശോധിച്ച് സേവ് ചെയ്യുക
-                </span>
-              </div>
-            )}
 
             {/* Search Filter */}
             <div className="px-5 pt-3 pb-2 border-b border-stone-100 dark:border-stone-800/80">
@@ -391,7 +274,7 @@ export const RecordPurchaseModal: React.FC<RecordPurchaseModalProps> = ({
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={isSaving || isParsingExcel}
+                disabled={isSaving}
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {isSaving ? (

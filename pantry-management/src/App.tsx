@@ -8,7 +8,6 @@ import { ForceUpdateModal } from './components/common/ForceUpdateModal';
 import { ProductionPage } from './pages/ProductionPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { IngredientsPage } from './pages/IngredientsPage';
-import { MixturesPage } from './pages/MixturesPage';
 import { SettingsPage } from './pages/SettingsPage';
 
 export const App: React.FC = () => {
@@ -27,8 +26,8 @@ export const App: React.FC = () => {
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/ingredients" element={<IngredientsPage />} />
 
-                {/* Special Prepared Mixtures / Intermediate Preparations */}
-                <Route path="/mixtures" element={<MixturesPage />} />
+                {/* Redirect Mixtures - Managed Exclusively in Admin */}
+                <Route path="/mixtures" element={<Navigate to="/" replace />} />
 
                 {/* System & Profile Settings */}
                 <Route path="/settings" element={<SettingsPage />} />

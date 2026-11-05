@@ -9,6 +9,7 @@ export default {
     extend: {
       colors: {
         pulari: {
+          primary: '#5C1313',
           maroon: '#5C1313',
           'maroon-hover': '#4A0E0E',
           wine: '#6E1818',

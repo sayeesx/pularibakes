@@ -1,12 +1,12 @@
 import React from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { Home, Package, Plus, UtensilsCrossed, Settings, FlaskConical } from 'lucide-react';
+import { Home, Package, Plus, UtensilsCrossed, Settings } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export const BottomNav: React.FC = () => {
   const { setIsStartProductionOpen } = useApp();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [isOpeningProduction, setIsOpeningProduction] = React.useState(false);
@@ -28,7 +28,7 @@ export const BottomNav: React.FC = () => {
   ];
 
   const navRight = [
-    { to: '/mixtures', label: t.navMixtures, icon: FlaskConical, end: false },
+    { to: '/ingredients', label: t.navIngredients, icon: UtensilsCrossed, end: false },
     { to: '/settings', label: t.navSettings, icon: Settings, end: false },
   ];
 
@@ -62,19 +62,25 @@ export const BottomNav: React.FC = () => {
                   >
                     <Icon className="w-5 h-5 stroke-[2.2]" />
                   </div>
-                  <span className="text-[10px] tracking-tight mt-0.5 line-clamp-1">{item.label}</span>
+                  <span
+                    className={`tracking-tight mt-0.5 line-clamp-1 font-semibold ${
+                      language === 'ml' ? 'text-[8.5px] leading-tight font-malayalam' : 'text-[10px]'
+                    }`}
+                  >
+                    {item.label}
+                  </span>
                 </>
               )}
             </NavLink>
           );
         })}
 
-        {/* Center Elevated Floating Add Production Button */}
+        {/* Center Elevated Floating Add Production Button with Gradient Background */}
         <div className="flex-1 flex items-center justify-center relative -mt-6 pointer-events-none">
           <button
             type="button"
             onClick={handleCenterAction}
-            className="pointer-events-auto w-14 h-14 rounded-full bg-gradient-to-tr from-pulari-primary via-[#781B1B] to-pulari-gold text-white shadow-xl flex items-center justify-center border-4 border-white dark:border-[#141212] transition-transform duration-200 active:scale-90 hover:scale-105 press-apple cursor-pointer group"
+            className="pointer-events-auto w-14 h-14 rounded-full bg-gradient-to-tr from-[#5C1313] via-[#851C1C] to-[#EAA655] text-white shadow-xl shadow-[#5C1313]/35 flex items-center justify-center border-4 border-white dark:border-[#141212] transition-transform duration-200 active:scale-90 hover:scale-105 press-apple cursor-pointer group"
             title={t.startProduction}
             aria-label={t.startProduction}
           >
@@ -121,7 +127,13 @@ export const BottomNav: React.FC = () => {
                   >
                     <Icon className="w-5 h-5 stroke-[2.2]" />
                   </div>
-                  <span className="text-[10px] tracking-tight mt-0.5 line-clamp-1">{item.label}</span>
+                  <span
+                    className={`tracking-tight mt-0.5 line-clamp-1 font-semibold ${
+                      language === 'ml' ? 'text-[8.5px] leading-tight font-malayalam' : 'text-[10px]'
+                    }`}
+                  >
+                    {item.label}
+                  </span>
                 </>
               )}
             </NavLink>

@@ -1,20 +1,16 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { GridCardSkeleton } from '../components/ui/BatchCardSkeleton';
 import { RecipeViewModal } from '../components/recipes/RecipeViewModal';
-import { Product, Recipe, Ingredient, UnitType } from '../types';
+import { Product, Recipe, Ingredient } from '../types';
 import {
   TbSearch,
   TbBook,
   TbCheck,
-  TbUpload,
-  TbDownload,
-  TbRefresh,
 } from 'react-icons/tb';
-import { parseProductsExcel, downloadProductsTemplate } from '../lib/excelImport';
 
 export type ProductCategoryTab = 'all' | 'mixture' | 'murukku' | 'banana_chips' | 'cakes' | 'others';
 
@@ -45,9 +41,6 @@ export const ProductsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<ProductCategoryTab>('all');
   const [loading, setLoading] = useState<boolean>(true);
-  const [isImportingExcel, setIsImportingExcel] = useState<boolean>(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Read-only Recipe Modal
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState<boolean>(false);
@@ -75,78 +68,6 @@ export const ProductsPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [repo, dataVersion]);
-
-  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsImportingExcel(true);
-    try {
-      const parsed = await parseProductsExcel(file);
-      if (parsed.length === 0) {
-        addToast(
-          language === 'ml'
-            ? 'എക്സലിൽ സാധുവായ ഉൽപ്പന്ന വിവരങ്ങൾ കണ്ടെത്താൻ കഴിഞ്ഞില്ല'
-            : 'No valid product rows found in Excel',
-          'warning'
-        );
-        setIsImportingExcel(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
-      }
-
-      let count = 0;
-      for (const p of parsed) {
-        const existing = products.find(
-          (prod) =>
-            prod.name.trim().toLowerCase() === p.name.trim().toLowerCase() ||
-            (p.sku && prod.sku && prod.sku.trim().toLowerCase() === p.sku.trim().toLowerCase())
-        );
-
-        if (existing) {
-          await repo.updateProduct(existing.id, {
-            name: p.name,
-            sku: p.sku || existing.sku,
-            unit: (p.unit as UnitType) || existing.unit || 'kg',
-            currentStock: p.currentStock,
-            wholesalePrice: p.wholesalePrice,
-            isActive: true,
-          });
-        } else {
-          await repo.createProduct({
-            name: p.name,
-            sku: p.sku || undefined,
-            unit: (p.unit as UnitType) || 'kg',
-            currentStock: p.currentStock,
-            wholesalePrice: p.wholesalePrice,
-            isActive: true,
-          });
-        }
-        count++;
-      }
-
-      addToast(
-        language === 'ml'
-          ? `${count} ഉൽപ്പന്നങ്ങൾ എക്സലിൽ നിന്ന് വിജയകരമായി ചേർത്തു/പുതുക്കി`
-          : `${count} products imported/updated successfully from Excel`,
-        'success'
-      );
-      repo.invalidateCache();
-      triggerRefresh();
-      await loadData();
-    } catch (err: any) {
-      console.error('Failed to import products from Excel:', err);
-      addToast(
-        language === 'ml'
-          ? `എക്സൽ ഇറക്കുമതി പരാജയപ്പെട്ടു: ${err?.message || 'Error'}`
-          : `Excel import failed: ${err?.message || 'Error'}`,
-        'error'
-      );
-    } finally {
-      setIsImportingExcel(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   const categoryCounts = useMemo(() => {
     const counts = {
@@ -199,47 +120,6 @@ export const ProductsPage: React.FC = () => {
               ? 'പുലരി ബേക്സ് ഉൽപ്പന്നങ്ങളുടെ കാറ്റലോഗും നിലവിലെ സ്റ്റോക്കും'
               : 'Pulari Bakes snack product catalogue & stock inventory'}
           </p>
-        </div>
-
-        {/* Excel Import & Download Template Buttons */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx, .xls, .csv"
-            className="hidden"
-            onChange={handleExcelUpload}
-          />
-
-          <button
-            type="button"
-            onClick={() => downloadProductsTemplate(products)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#1E1B1B] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#282323] text-xs font-bold transition-colors cursor-pointer shadow-2xs"
-            title="Download Excel sample template"
-          >
-            <TbDownload className="w-4 h-4 text-stone-400" />
-            <span>{language === 'ml' ? 'മാതൃക' : 'Template'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isImportingExcel}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all cursor-pointer shadow-sm disabled:opacity-50"
-            title="Upload Excel catalog"
-          >
-            {isImportingExcel ? (
-              <>
-                <TbRefresh className="w-4 h-4 animate-spin" />
-                <span>{language === 'ml' ? 'ചേർക്കുന്നു...' : 'Importing...'}</span>
-              </>
-            ) : (
-              <>
-                <TbUpload className="w-4 h-4" />
-                <span>{language === 'ml' ? 'എക്സൽ അപ്‌ലോഡ്' : 'Upload Excel'}</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
 

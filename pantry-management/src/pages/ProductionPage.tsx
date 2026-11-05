@@ -632,7 +632,7 @@ export const ProductionPage: React.FC = () => {
           <button
             onClick={handleOpenNewBatch}
             disabled={isOpeningNewBatch}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-epso-red to-epso-orange hover:bg-epso-red-hover text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-md transition-all active:scale-95 press-apple select-none cursor-pointer"
+            className="flex items-center gap-1.5 bg-gradient-to-r from-[#5C1313] via-[#7B1F1F] to-[#EAA655] hover:opacity-95 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-md shadow-[#5C1313]/25 transition-all active:scale-95 press-apple select-none cursor-pointer"
           >
             {isOpeningNewBatch ? (
               <svg
