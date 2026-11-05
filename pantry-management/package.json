@@ -22,7 +22,9 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.54.0",
     "motion": "^14.1.0",
+    "oxlint": "^1.81.0",
     "postcss": "^8.5.29",
+    "pulari-bakes": "file:..",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-hook-form": "^7.89.0",
@@ -36,10 +38,7 @@
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
     "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.3",
     "zod": "^4.6.5"
-  },
-  "devDependencies": {
-    "oxlint": "^1.81.0",
-    "vitest": "^5.0.3"
   }
 }

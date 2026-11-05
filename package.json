@@ -1,0 +1,14 @@
+{
+  "name": "pulari-bakes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build-root.js",
+    "build:admin": "npm run build --prefix admin",
+    "build:pantry": "npm run build --prefix pantry-management"
+  },
+  "dependencies": {
+    "vite": "^8.3.0"
+  }
+}
