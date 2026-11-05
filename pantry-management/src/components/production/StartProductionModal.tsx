@@ -859,9 +859,9 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-stone-100 dark:bg-[#252020] border border-stone-200/80 dark:border-[#2E2828] flex items-center justify-center shrink-0 shadow-2xs">
                           <img
-                            src="/epso-icon-grey.png"
+                            src="/pulari-logo.jpg"
                             alt={p.name}
-                            className="w-6 h-6 object-contain opacity-55 dark:opacity-45 select-none pointer-events-none"
+                            className="w-6 h-6 rounded-md object-cover opacity-80 select-none pointer-events-none"
                           />
                         </div>
                         <div>
@@ -945,9 +945,9 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-stone-200/60 dark:bg-[#2e2828]/60 flex items-center justify-center shrink-0">
                     <img
-                      src="/epso-icon-grey.png"
+                      src="/pulari-logo.jpg"
                       alt={selectedProduct.name}
-                      className="w-6 h-6 object-contain opacity-60 dark:opacity-50 select-none pointer-events-none"
+                      className="w-6 h-6 rounded-md object-cover opacity-80 select-none pointer-events-none"
                     />
                   </div>
                   <div>

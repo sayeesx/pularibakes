@@ -267,11 +267,11 @@ export const PrintPurchaseListModal: React.FC<PrintPurchaseListModalProps> = ({
           <div className="p-4 sm:p-5 border-b border-stone-200 dark:border-[#2E2828] flex items-center justify-between gap-3 bg-stone-50/50 dark:bg-[#181515]">
             <div className="flex items-center gap-3">
               <img
-                src="/epso-swirl-transparent.png"
-                alt="EPSO Brand Icon"
-                className="w-10 h-10 object-contain"
+                src="/pulari-logo.jpg"
+                alt="Pulari Bakes Logo"
+                className="w-10 h-10 rounded-xl object-cover"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/pwa-512x512.png';
+                  (e.target as HTMLImageElement).src = '/pulari-logo.jpg';
                 }}
               />
               <div>
@@ -580,11 +580,11 @@ export const PrintPurchaseListModal: React.FC<PrintPurchaseListModalProps> = ({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                       <img
-                        src="/epso-swirl-transparent.png"
+                        src="/pulari-logo.jpg"
                         alt="Pulari Bakes Icon"
-                        style={{ width: '48px', height: '48px', objectFit: 'contain' }}
+                        style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '10px' }}
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = '/pwa-512x512.png';
+                          (e.target as HTMLImageElement).src = '/pulari-logo.jpg';
                         }}
                       />
                       <div>

@@ -25,12 +25,12 @@ export const OfflineScreen: React.FC<OfflineScreenProps> = ({ onRetry }) => {
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6 bg-[#F8F9FA] dark:bg-[#141212] text-stone-800 dark:text-stone-200 select-none animate-in fade-in duration-200">
       <div className="w-full max-w-sm flex flex-col items-center text-center">
-        {/* Full Epso Production Logo in Grey */}
+        {/* Pulari Bakes Logo */}
         <div className="mb-6 flex justify-center">
           <img
-            src="/epso-logo-transparent.png"
+            src="/pulari-logo.jpg"
             alt="Pulari Bakes"
-            className="h-16 w-auto object-contain filter grayscale opacity-60 dark:opacity-40"
+            className="h-16 w-16 rounded-2xl object-cover filter grayscale opacity-60 dark:opacity-40"
             onError={(e) => {
               (e.target as HTMLElement).style.display = 'none';
             }}

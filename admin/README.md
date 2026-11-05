@@ -1,9 +1,9 @@
-# pulari-bakes-admin
+# Pulari Bakes Admin Management Console
 
-Pulari Bakes Production & Pantry Management - Super Admin Web Application (PWA).
+Pulari Bakes Production & Remote Management - Executive Admin Web Application (Desktop-First SPA).
 
 - Real-time Supabase Database Integration
-- Brutally Mobile-Optimized Layout & Touch UX (Workout/Ring Gauge PWA Style)
+- Responsive Layout & Touch-Friendly Administrative UI
 - Desktop Widescreen Analytical Suite
 - Real Production Output Curves (Recharts Wave Animations)
 - Real-time Shortage Alerts & Notifications Center

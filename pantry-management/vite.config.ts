@@ -85,7 +85,7 @@ export default defineConfig({
     versionPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'robots.txt'],
+      includeAssets: ['favicon.ico', 'favicon.png', 'apple-touch-icon.png', 'pulari-logo.jpg'],
       manifest: {
         name: 'Pulari Bakes Production & Inventory',
         short_name: 'Pulari Bakes',

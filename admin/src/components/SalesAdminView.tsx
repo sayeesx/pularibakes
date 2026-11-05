@@ -1307,14 +1307,14 @@ ${phoneEmailLine ? `${phoneEmailLine}\n` : ''}${taxLine ? `${taxLine}\n` : ''}${
 
                 {/* Company Header (Dynamic from Settings) */}
                 <div className="text-center pt-2 pb-3">
-                  {/* Epso Brand Icon without "espo production" text */}
+                  {/* Pulari Bakes Brand Logo */}
                   <div className="flex justify-center mb-1.5">
                     <img
-                      src="/epso-swirl-transparent.png"
+                      src="/pulari-logo.jpg"
                       alt="Pulari Bakes Logo"
-                      className="w-12 h-12 object-contain"
+                      className="w-12 h-12 rounded-xl object-cover"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = '/favicon.png';
+                        (e.target as HTMLImageElement).src = '/pulari-logo.jpg';
                       }}
                     />
                   </div>

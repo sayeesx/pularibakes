@@ -165,9 +165,9 @@ export const ProductionPinGate: React.FC<ProductionPinGateProps> = ({ onUnlock }
       <div className="w-full max-w-sm flex justify-between items-center py-2">
         <div className="flex items-center gap-2">
           <img
-            src="/epso-swirl-transparent.png"
+            src="/pulari-logo.jpg"
             alt="Pulari Bakes Logo"
-            className="w-7 h-7 object-contain"
+            className="w-7 h-7 rounded-md object-cover"
             onError={(e) => {
               (e.target as HTMLElement).style.display = 'none';
             }}
