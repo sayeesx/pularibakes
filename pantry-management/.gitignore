@@ -31,3 +31,5 @@ dist-ssr
 admin - epos production/
 
 ep-ad/
+.vercel
+.env*

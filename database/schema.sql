@@ -1,6 +1,6 @@
 -- ==============================================================================
 -- PULARI BAKES PRODUCTION MANAGEMENT SYSTEM - COMPLETE UNIFIED DATABASE SCHEMA
--- Generated: 2026-11-05T02:26:08.763Z
+-- Generated: 2026-11-05T02:37:06.585Z
 -- Portability: 100% PostgreSQL Standard (Supabase, Self-Hosted Docker, Neon, RDS)
 -- ==============================================================================
 
