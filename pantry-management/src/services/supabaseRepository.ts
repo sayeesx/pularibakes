@@ -772,20 +772,20 @@ export class SupabaseRepository implements IEpsoRepository {
     const mType = params.movementType || (params.quantityDelta >= 0 ? 'adjustment' : 'wastage');
     const costPerUnit = params.coverUnitCost ?? ing.avgCostPerUnit ?? 0;
 
+    const totalCost = Math.abs(params.quantityDelta) * costPerUnit;
     const { data: mov, error } = await client
       .from('stock_movements')
       .insert({
         item_id: ing.id,
         item_type: 'ingredient',
-        item_name: ing.name,
         movement_type: mType,
         quantity: params.quantityDelta,
         unit: ing.unit,
-        previous_balance: ing.currentStock,
-        new_balance: newStock,
-        cost_per_unit: costPerUnit,
-        reference: mType === 'production_consumption' ? 'Production Consumption' : 'Stock Adjustment',
-        operator_name: params.operatorName,
+        stock_before: ing.currentStock,
+        stock_after: newStock,
+        unit_cost: costPerUnit,
+        total_cost: totalCost,
+        operator: params.operatorName,
         reason: params.reason,
       })
       .select()
@@ -798,16 +798,17 @@ export class SupabaseRepository implements IEpsoRepository {
       ingredient: updated,
       movement: {
         id: mov.id,
-        itemId: mov.item_id,
-        itemType: mov.item_type,
-        itemName: mov.item_name,
+        itemId: mov.item_id || ing.id,
+        itemType: mov.item_type || 'ingredient',
+        itemName: ing.name,
         movementType: mov.movement_type,
         quantity: Number(mov.quantity),
         unit: mov.unit,
-        previousBalance: Number(mov.previous_balance),
-        newBalance: Number(mov.new_balance),
-        reference: mov.reference,
-        operatorName: mov.operator_name,
+        previousBalance: Number(mov.stock_before ?? ing.currentStock),
+        newBalance: Number(mov.stock_after ?? newStock),
+        costPerUnit: Number(mov.unit_cost) || costPerUnit,
+        reference: mov.reason || params.reason,
+        operatorName: mov.operator || params.operatorName,
         reason: mov.reason,
         createdAt: mov.created_at,
       },
@@ -1260,11 +1261,12 @@ export class SupabaseRepository implements IEpsoRepository {
           movement_type: deltaProduct > 0 ? 'production_output' : 'adjustment',
           quantity: deltaProduct,
           unit: oldRun.unit,
-          previous_balance: prevBal,
-          new_balance: newBal,
-          reference: `Run ${oldRun.runNumber} Edit`,
-          operator_name: operator,
-          reason: `Batch quantity adjusted from ${oldRun.actualQuantity} to ${params.actualQuantity} ${oldRun.unit}`,
+          stock_before: prevBal,
+          stock_after: newBal,
+          unit_cost: 0,
+          total_cost: 0,
+          operator: operator,
+          reason: `Run ${oldRun.runNumber} Edit: Batch quantity adjusted from ${oldRun.actualQuantity} to ${params.actualQuantity} ${oldRun.unit}`,
           created_at: now,
         });
       }
@@ -1295,17 +1297,19 @@ export class SupabaseRepository implements IEpsoRepository {
               .update({ current_stock: newIngBal, updated_at: now })
               .eq('id', newIng.ingredientId);
 
+            const ingCost = Number(newIng.unitCost) || 0;
             await client.from('stock_movements').insert({
               item_id: newIng.ingredientId,
               item_type: 'ingredient',
               movement_type: deltaIng > 0 ? 'production_consumption' : 'adjustment',
               quantity: -deltaIng,
               unit: newIng.unit,
-              previous_balance: prevIngBal,
-              new_balance: newIngBal,
-              reference: `Run ${oldRun.runNumber} Edit`,
-              operator_name: operator,
-              reason: `Batch ingredient adjustment for ${oldRun.productName}`,
+              stock_before: prevIngBal,
+              stock_after: newIngBal,
+              unit_cost: ingCost,
+              total_cost: Math.abs(deltaIng) * ingCost,
+              operator: operator,
+              reason: `Batch ingredient adjustment for ${oldRun.productName} (Run ${oldRun.runNumber})`,
               created_at: now,
             });
           }
@@ -1434,14 +1438,14 @@ export class SupabaseRepository implements IEpsoRepository {
         await client.from('stock_movements').insert({
           item_id: run.product_id,
           item_type: 'product',
-          item_name: prod.name,
           movement_type: 'wastage',
           quantity: -Number(run.actual_quantity),
           unit: run.unit,
-          previous_balance: prev,
-          new_balance: newBal,
-          reference: `Wastage of batch`,
-          operator_name: operatorName,
+          stock_before: prev,
+          stock_after: newBal,
+          unit_cost: 0,
+          total_cost: 0,
+          operator: operatorName,
           reason: 'Batch marked as wastage on delete',
         });
       }
@@ -1910,13 +1914,13 @@ export class SupabaseRepository implements IEpsoRepository {
     try {
       const { data: basicMovements } = await client
         .from('stock_movements')
-        .select('quantity, cost_per_unit, item_name, reason')
+        .select('quantity, unit_cost, reason')
         .eq('item_type', 'ingredient')
         .ilike('reason', `%${productionDate}%`);
 
       if (basicMovements && basicMovements.length > 0) {
         for (const m of basicMovements) {
-          const cost = Number(m.cost_per_unit) || 0;
+          const cost = Number(m.unit_cost) || 0;
           const qty = Math.abs(Number(m.quantity) || 0);
           dailyBasicIngredientsExpense += qty * cost;
         }
@@ -1970,22 +1974,21 @@ export class SupabaseRepository implements IEpsoRepository {
         .from('stock_movements')
         .delete()
         .eq('item_id', oilIng.id)
-        .eq('reference', `Daily Closing ${productionDate}`);
+        .ilike('reason', `%Daily oil usage:% ${productionDate}%`);
 
       // Record synchronized stock movement ledger entry
       await client.from('stock_movements').insert({
         item_id: oilIng.id,
         item_type: 'ingredient',
-        item_name: oilIng.name || 'ഓയിൽ',
         movement_type: 'production_consumption',
         quantity: -oilConsumedKg,
         unit: oilIng.unit || 'kg',
-        previous_balance: previousAvailableStock,
-        new_balance: finalOilStock,
-        cost_per_unit: oilUnitCost,
-        reference: `Daily Closing ${productionDate}`,
-        operator_name: closedBy,
-        reason: `Daily oil usage: ${oilUsed} kg used - ${leftoverOil} kg leftover = ${oilConsumedKg} kg net consumed`,
+        stock_before: previousAvailableStock,
+        stock_after: finalOilStock,
+        unit_cost: oilUnitCost,
+        total_cost: oilTotalExpense,
+        operator: closedBy,
+        reason: `Daily oil usage: ${oilUsed} kg used - ${leftoverOil} kg leftover = ${oilConsumedKg} kg net consumed (${productionDate})`,
         created_at: new Date().toISOString(),
       });
     }
@@ -2289,16 +2292,15 @@ export class SupabaseRepository implements IEpsoRepository {
         await client.from('stock_movements').insert({
           item_id: packagingItemId,
           item_type: 'ingredient',
-          item_name: `${prodName} Covers (${packetSize})`,
           movement_type: 'production_consumption',
           quantity: -packetsPacked,
           unit: 'pcs',
-          previous_balance: currStock,
-          new_balance: newStock,
-          cost_per_unit: unitCost,
-          reference: `Packing ${packingDate}`,
-          operator_name: operatorName,
-          reason: `Packaging covers consumed for ${packetsPacked} packets`,
+          stock_before: currStock,
+          stock_after: newStock,
+          unit_cost: unitCost,
+          total_cost: packetsPacked * unitCost,
+          operator: operatorName,
+          reason: `Packaging covers consumed for ${packetsPacked} packets (${prodName} - ${packetSize}) - Packing ${packingDate}`,
           created_at: new Date().toISOString(),
         });
       }

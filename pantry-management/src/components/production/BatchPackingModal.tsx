@@ -89,26 +89,27 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
       repo.listPacketTypes(),
       repo.listPackagingItems ? repo.listPackagingItems() : Promise.resolve([]),
     ]).then(([types, packagingItems]) => {
-      let activeTypes = (types || []).filter((t) => t.isActive !== false);
+      let activeTypes = (types || []).filter((t) => t && t.isActive !== false);
 
       if (packagingItems && packagingItems.length > 0) {
         const outOfStockNames = new Set(
           packagingItems
-            .filter((p: any) => (p.currentStock !== undefined && Number(p.currentStock) <= 0) || p.isActive === false)
+            .filter((p: any) => p && ((p.currentStock !== undefined && Number(p.currentStock) <= 0) || p.isActive === false))
             .map((p: any) => (p.sizeLabel || p.name || '').trim().toLowerCase())
+            .filter(Boolean)
         );
         activeTypes = activeTypes.filter(
-          (t) => !outOfStockNames.has(t.name.trim().toLowerCase())
+          (t) => t && t.name && !outOfStockNames.has(t.name.trim().toLowerCase())
         );
       }
 
       if (activeTypes.length > 0) {
         setCatalogPackets(activeTypes.map((t) => ({ name: t.name, costPerPacket: t.costPerPacket })));
       } else {
-        setCatalogPackets([]);
+        setCatalogPackets(DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 })));
       }
     }).catch(() => {
-      setCatalogPackets([]);
+      setCatalogPackets(DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 })));
     });
   }, [repo]);
 
@@ -160,13 +161,11 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
     }
   }, [isOpen, batch, initialPackings, repo]);
 
-  if (!batch) return null;
-
   // All in-stock packets shown directly to the cook (plus any packet already recorded on this batch):
   const displayedPackets = useMemo(() => {
     const existingPacketNames = Object.keys(quantities).filter((k) => (quantities[k] || 0) > 0);
     const existingMissing = existingPacketNames
-      .filter((name) => !catalogPackets.some((cp) => cp.name.toLowerCase() === name.toLowerCase()))
+      .filter((name) => Boolean(name) && !catalogPackets.some((cp) => (cp.name || '').toLowerCase() === name.toLowerCase()))
       .map((name) => ({ name, costPerPacket: 0 }));
 
     return [...catalogPackets, ...existingMissing];
@@ -244,6 +243,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
 
   const handleSubmitAllPackets = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!batch) return;
 
     try {
       setIsSubmitting(true);
@@ -283,6 +283,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
 
   const handleSuccessAnimComplete = () => {
     setShowSuccessAnim(false);
+    if (!batch) return;
     addToast(
       language === 'ml'
         ? totalPacketsSum === 0
@@ -303,6 +304,8 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
   };
 
   const totalTicks = Math.min(MAX_RULER_PACKETS - MIN_PACKETS, 500);
+
+  if (!isOpen || !batch) return null;
 
   return (
     <>

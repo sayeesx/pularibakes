@@ -259,19 +259,19 @@ export async function adjustProductStock(
   dbCache.invalidate('admin_stock_movements');
 
   try {
+    const costPrice = Number(prod.avg_cost_per_unit) || 0;
     await supabase.from('stock_movements').insert({
       item_id: productId,
-      item_type: 'finished',
-      item_name: prod.name,
-      movement_type: delta >= 0 ? 'in' : 'out',
-      quantity: Math.abs(delta),
-      unit: prod.unit,
-      previous_balance: prevStock,
-      new_balance: newStock,
-      cost_per_unit: prod.avg_cost_per_unit,
-      reference: `ADMIN-PRD-ADJ-${Date.now().toString().slice(-6)}`,
-      operator_name: operatorName,
-      reason,
+      item_type: 'product',
+      movement_type: 'adjustment',
+      quantity: delta,
+      unit: prod.unit || 'packets',
+      stock_before: prevStock,
+      stock_after: newStock,
+      unit_cost: costPrice,
+      total_cost: Math.abs(delta) * costPrice,
+      operator: operatorName || 'Admin',
+      reason: reason || 'Product stock adjustment',
       created_at: new Date().toISOString(),
     });
   } catch (err) {
@@ -400,19 +400,19 @@ export async function adjustIngredientStock(
   dbCache.invalidate('admin_stock_movements');
 
   // Insert stock movement record
+  const avgCost = Number(ing.avg_cost_per_unit) || 0;
   await supabase.from('stock_movements').insert({
     item_id: ingredientId,
-    item_type: 'raw',
-    item_name: ing.name,
-    movement_type: delta >= 0 ? 'in' : 'out',
-    quantity: Math.abs(delta),
+    item_type: 'ingredient',
+    movement_type: delta >= 0 ? 'purchase' : 'adjustment',
+    quantity: delta,
     unit: ing.unit,
-    previous_balance: prevStock,
-    new_balance: newStock,
-    cost_per_unit: ing.avg_cost_per_unit,
-    reference: `ADMIN-ADJ-${Date.now().toString().slice(-6)}`,
-    operator_name: operatorName,
-    reason,
+    stock_before: prevStock,
+    stock_after: newStock,
+    unit_cost: avgCost,
+    total_cost: Math.abs(delta) * avgCost,
+    operator: operatorName || 'Admin',
+    reason: reason || 'Ingredient stock adjustment',
     created_at: new Date().toISOString(),
   });
 }
@@ -776,14 +776,14 @@ export async function deleteProductionRun(
         await supabase.from('stock_movements').insert({
           item_id: run.product_id,
           item_type: 'product',
-          item_name: prod.name,
-          movement_type: 'adjustment',
+          movement_type: 'wastage',
           quantity: -deductQty,
-          unit: prod.unit,
-          previous_balance: prevStock,
-          new_balance: newStock,
-          reference: `Del Run ${run.run_number}`,
-          operator_name: options?.operatorName || 'Admin',
+          unit: prod.unit || 'packets',
+          stock_before: prevStock,
+          stock_after: newStock,
+          unit_cost: 0,
+          total_cost: 0,
+          operator: options?.operatorName || 'Admin',
           reason: options?.reason || `Batch #${run.run_number} deleted: -${deductQty} ${prod.unit} removed from stock`,
           created_at: new Date().toISOString(),
         });
@@ -818,14 +818,14 @@ export async function deleteProductionRun(
             await supabase.from('stock_movements').insert({
               item_id: ingId,
               item_type: 'ingredient',
-              item_name: ing.name,
               movement_type: 'adjustment',
               quantity: qtyToRestore,
               unit: ing.unit,
-              previous_balance: prevIngStock,
-              new_balance: newIngStock,
-              reference: `Del Run ${run.run_number} Reversal`,
-              operator_name: options?.operatorName || 'Admin',
+              stock_before: prevIngStock,
+              stock_after: newIngStock,
+              unit_cost: 0,
+              total_cost: 0,
+              operator: options?.operatorName || 'Admin',
               reason: `Batch #${run.run_number} deleted: +${qtyToRestore} ${ing.unit} restored to stock`,
               created_at: new Date().toISOString(),
             });
@@ -947,15 +947,15 @@ export async function fetchStockMovements(force = false): Promise<StockMovement[
       id: row.id,
       itemId: row.item_id || '',
       itemType: (row.item_type || 'ingredient') as any,
-      itemName: row.item_name || row.itemName || '',
+      itemName: row.reason || '',
       movementType: (row.movement_type || 'adjustment') as any,
       quantity: Number(row.quantity) || 0,
       unit: row.unit || 'kg',
-      previousBalance: Number(row.previous_balance ?? row.stock_before) || 0,
-      newBalance: Number(row.new_balance ?? row.stock_after) || 0,
+      previousBalance: Number(row.stock_before ?? row.previous_balance) || 0,
+      newBalance: Number(row.stock_after ?? row.new_balance) || 0,
       costPerUnit: Number(row.unit_cost ?? row.cost_per_unit) || undefined,
-      reference: row.reference || row.reference_id || '',
-      operatorName: row.operator_name || row.operator || '',
+      reference: row.reference_id || '',
+      operatorName: row.operator || row.operator_name || 'Staff',
       reason: row.reason || '',
       createdAt: row.created_at,
     }));
@@ -1104,10 +1104,19 @@ export async function fetchLatestOilBalance(): Promise<{ currentStock: number; a
 
 export async function fetchOilPurchasesForDate(date: string): Promise<number> {
   // Sum inward stock movements for oil on that date
+  const { data: oilIng } = await supabase
+    .from('ingredients')
+    .select('id')
+    .or("name.eq.ഓയിൽ,name.ilike.%oil%")
+    .limit(1)
+    .maybeSingle();
+
+  if (!oilIng) return 0;
+
   const { data: movements } = await supabase
     .from('stock_movements')
-    .select('quantity, item_name')
-    .or("item_name.eq.ഓയിൽ,item_name.ilike.%oil%")
+    .select('quantity')
+    .eq('item_id', oilIng.id)
     .in('movement_type', ['in', 'purchase'])
     .gte('created_at', `${date}T00:00:00.000Z`)
     .lte('created_at', `${date}T23:59:59.999Z`);
@@ -1368,13 +1377,13 @@ export async function saveDailyClosing(params: {
   try {
     const { data: basicMovements } = await supabase
       .from('stock_movements')
-      .select('quantity, cost_per_unit, item_name, reason')
+      .select('quantity, unit_cost, reason')
       .eq('item_type', 'ingredient')
       .ilike('reason', `%${productionDate}%`);
 
     if (basicMovements && basicMovements.length > 0) {
       for (const m of basicMovements) {
-        const cost = Number(m.cost_per_unit) || 0;
+        const cost = Number(m.unit_cost) || 0;
         const qty = Math.abs(Number(m.quantity) || 0);
         dailyBasicIngredientsExpense += qty * cost;
       }
@@ -1426,21 +1435,20 @@ export async function saveDailyClosing(params: {
       .from('stock_movements')
       .delete()
       .eq('item_id', oilIng.id)
-      .eq('reference', `Daily Closing ${productionDate}`);
+      .ilike('reason', `%Daily oil usage:% ${productionDate}%`);
 
     await supabase.from('stock_movements').insert({
       item_id: oilIng.id,
       item_type: 'ingredient',
-      item_name: oilIng.name || 'ഓയിൽ',
       movement_type: 'production_consumption',
       quantity: -oilConsumedKg,
       unit: oilIng.unit || 'kg',
-      previous_balance: previousAvailableStock,
-      new_balance: finalOilStock,
-      cost_per_unit: oilUnitCost,
-      reference: `Daily Closing ${productionDate}`,
-      operator_name: closedBy,
-      reason: `Daily oil usage: ${oilUsed} kg used - ${leftoverOil} kg leftover = ${oilConsumedKg} kg net consumed`,
+      stock_before: previousAvailableStock,
+      stock_after: finalOilStock,
+      unit_cost: oilUnitCost,
+      total_cost: oilConsumedKg * oilUnitCost,
+      operator: closedBy,
+      reason: `Daily oil usage: ${productionDate} - ${oilUsed} kg used - ${leftoverOil} kg leftover = ${oilConsumedKg} kg net consumed`,
       created_at: new Date().toISOString(),
     });
   }
@@ -1616,19 +1624,19 @@ export async function adjustPackagingItemStock(
 
   if (error) throw error;
 
+  const unitCost = Number(item.unitCost ?? item.unit_cost) || 0;
   await supabase.from('stock_movements').insert({
     item_id: id,
     item_type: 'ingredient',
-    item_name: `${item.products?.name || 'Product'} ${item.size_label} Cover`,
-    movement_type: delta >= 0 ? 'purchase' : 'adjust',
+    movement_type: delta >= 0 ? 'purchase' : 'adjustment',
     quantity: delta,
     unit: 'pcs',
-    previous_balance: prevStock,
-    new_balance: newStock,
-    cost_per_unit: Number(item.unit_cost) || 0,
-    reference: `COVER-${Date.now().toString().slice(-6)}`,
-    operator_name: 'Admin',
-    reason,
+    stock_before: prevStock,
+    stock_after: newStock,
+    unit_cost: unitCost,
+    total_cost: Math.abs(delta) * unitCost,
+    operator: 'Admin',
+    reason: reason || 'Packaging cover adjustment',
     created_at: new Date().toISOString(),
   });
 
@@ -1699,16 +1707,15 @@ export async function recordPacking(params: {
       await supabase.from('stock_movements').insert({
         item_id: packagingItemId,
         item_type: 'ingredient',
-        item_name: `${prodName} Covers (${packetSize})`,
         movement_type: 'production_consumption',
         quantity: -packetsPacked,
         unit: 'pcs',
-        previous_balance: currStock,
-        new_balance: newStock,
-        cost_per_unit: unitCost,
-        reference: `Packing ${packingDate}`,
-        operator_name: operatorName,
-        reason: `Packaging covers consumed for ${packetsPacked} packets`,
+        stock_before: currStock,
+        stock_after: newStock,
+        unit_cost: unitCost,
+        total_cost: packetsPacked * unitCost,
+        operator: operatorName,
+        reason: `Packaging covers consumed for ${packetsPacked} packets (${prodName} - ${packetSize}) - Packing ${packingDate}`,
         created_at: new Date().toISOString(),
       });
     }
@@ -2056,16 +2063,15 @@ export async function bulkPurchaseIngredients(
     stockMovements.push({
       item_id: purchase.ingredientId,
       item_type: 'ingredient',
-      item_name: ing.name,
       movement_type: 'purchase',
       quantity: purchase.amount,
       unit: ing.unit,
-      previous_balance: prevStock,
-      new_balance: newStock,
-      cost_per_unit: purchase.costPerUnit,
-      reference: batchRef,
-      operator_name: 'Admin',
-      reason: 'Bulk purchase entry',
+      stock_before: prevStock,
+      stock_after: newStock,
+      unit_cost: purchase.costPerUnit,
+      total_cost: purchase.amount * purchase.costPerUnit,
+      operator: 'Admin',
+      reason: `Bulk purchase entry (${batchRef})`,
       created_at: now,
     });
   }

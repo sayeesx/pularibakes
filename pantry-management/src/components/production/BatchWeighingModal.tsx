@@ -199,33 +199,17 @@ export const BatchWeighingModal: React.FC<BatchWeighingModalProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
-          {/* Primary Action 1: Save & Add Packets Next */}
+        {/* Action Button: Save Weight */}
+        <div className="pt-2">
           <Button
             type="button"
             variant="primary"
-            onClick={() => handleCommit(true)}
-            isLoading={isSubmitting && shouldOpenPackingAfter}
-            disabled={isSubmitting}
-            className="flex-1 font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-sm order-1 cursor-pointer press-apple"
-          >
-            <TbPackage className="w-5 h-5 stroke-[2.2]" />
-            <span className="font-malayalam">
-              {language === 'ml' ? 'സേവ് ചെയ്ത് പാക്കറ്റുകൾ ചേർക്കുക' : 'Save & Add Packets'}
-            </span>
-          </Button>
-
-          {/* Primary Action 2: Save Only */}
-          <Button
-            type="button"
-            variant="secondary"
             onClick={() => handleCommit(false)}
-            isLoading={isSubmitting && !shouldOpenPackingAfter}
+            isLoading={isSubmitting}
             disabled={isSubmitting}
-            className="font-bold py-3.5 px-5 rounded-2xl flex items-center justify-center gap-2 border border-stone-300 dark:border-[#2E2828] order-2 cursor-pointer press-apple"
+            className="w-full font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-sm cursor-pointer press-apple"
           >
-            <TbCheck className="w-5 h-5 stroke-[2.5] text-emerald-600 dark:text-emerald-400" />
+            <TbCheck className="w-5 h-5 stroke-[2.5]" />
             <span className="font-malayalam">
               {language === 'ml' ? 'സേവ് ചെയ്യുക' : 'Save Weight'}
             </span>
