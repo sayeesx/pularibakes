@@ -395,6 +395,11 @@ export const ProductionPage: React.FC = () => {
 
       if (!matchSearch) return false;
 
+      // Do not display cancelled/deleted batches unless the user is specifically viewing the 'cancelled' tab
+      if (activeFilter !== 'cancelled' && r.status === 'cancelled') {
+        return false;
+      }
+
       if (activeFilter === 'today') {
         return isTodayDate(r.productionDate);
       }
@@ -513,20 +518,8 @@ export const ProductionPage: React.FC = () => {
         reason: restock ? 'restocked' : 'wastage',
       });
 
-      // Update local state to show run as deleted/cancelled in grey with restock or wastage
-      setRuns((prev) =>
-        prev.map((r) =>
-          r.id === runToDelete.id
-            ? {
-                ...r,
-                status: 'cancelled' as const,
-                cancellationReason: restock ? 'restocked' : 'wastage',
-                cancelledAt: new Date().toISOString(),
-                cancelledBy: staffName,
-              }
-            : r
-        )
-      );
+      // Remove deleted run from local state immediately so it disappears from the batch cards
+      setRuns((prev) => prev.filter((r) => r.id !== runToDelete.id));
 
       // Refresh live ingredients stock immediately
       try {

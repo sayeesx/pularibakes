@@ -991,41 +991,41 @@ export async function fetchDailyClosing(date: string): Promise<DailyClosing | nu
   const { data, error } = await supabase
     .from('daily_closings')
     .select('*')
-    .eq('production_date', date)
+    .eq('closing_date', date)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) return null;
 
-  let totalOilUsedKg: number | undefined = undefined;
-  let oilLeftoverKg: number | undefined = undefined;
+  let meta: any = {};
   if (data.notes) {
     try {
-      const meta = JSON.parse(data.notes);
-      if (typeof meta.oilUsedKg === 'number') totalOilUsedKg = meta.oilUsedKg;
-      if (typeof meta.leftoverOilKg === 'number') oilLeftoverKg = meta.leftoverOilKg;
+      meta = JSON.parse(data.notes);
     } catch {}
   }
 
+  const totalOilUsedKg = typeof meta.oilUsedKg === 'number' ? meta.oilUsedKg : undefined;
+  const oilLeftoverKg = typeof meta.leftoverOilKg === 'number' ? meta.leftoverOilKg : undefined;
+
   return {
     id: data.id,
-    productionDate: data.production_date,
-    oilOpeningBalance: Number(data.oil_opening_balance) || 0,
-    oilPurchases: Number(data.oil_purchases) || 0,
-    oilClosingBalance: Number(data.oil_closing_balance) || 0,
-    oilConsumed: Number(data.oil_consumed) || 0,
+    productionDate: data.closing_date,
+    oilOpeningBalance: Number(meta.oilOpeningBalance) || 0,
+    oilPurchases: Number(meta.oilPurchases) || 0,
+    oilClosingBalance: Number(data.oil_balance_kg ?? meta.oilClosingBalance) || 0,
+    oilConsumed: Number(meta.oilConsumed) || 0,
     totalOilUsedKg,
     oilLeftoverKg,
-    oilCostPerKg: Number(data.oil_cost_per_kg) || 0,
-    oilTotalExpense: Number(data.oil_total_expense) || 0,
-    productionWages: Number(data.production_wages) || 0,
-    totalSharedExpense: Number(data.total_shared_expense) || 0,
-    totalProductionKg: Number(data.total_production_kg) || 0,
-    status: data.status,
-    notes: data.notes || '',
+    oilCostPerKg: Number(meta.oilCostPerKg) || 0,
+    oilTotalExpense: Number(meta.oilTotalExpense) || 0,
+    productionWages: Number(meta.productionWages) || 0,
+    totalSharedExpense: Number(meta.totalSharedExpense) || 0,
+    totalProductionKg: Number(meta.totalProductionKg) || 0,
+    status: meta.status || 'closed',
+    notes: meta.userNotes ?? data.notes ?? '',
     closedBy: data.closed_by || 'Admin',
     createdAt: data.created_at,
-    updatedAt: data.updated_at,
+    updatedAt: data.created_at,
   };
 }
 
@@ -1034,28 +1034,36 @@ export async function fetchDailyClosings(limit = 60, force = false): Promise<Dai
     const { data, error } = await supabase
       .from('daily_closings')
       .select('*')
-      .order('production_date', { ascending: false })
+      .order('closing_date', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
-    return (data || []).map((data) => ({
-      id: data.id,
-      productionDate: data.production_date,
-      oilOpeningBalance: Number(data.oil_opening_balance) || 0,
-      oilPurchases: Number(data.oil_purchases) || 0,
-      oilClosingBalance: Number(data.oil_closing_balance) || 0,
-      oilConsumed: Number(data.oil_consumed) || 0,
-      oilCostPerKg: Number(data.oil_cost_per_kg) || 0,
-      oilTotalExpense: Number(data.oil_total_expense) || 0,
-      productionWages: Number(data.production_wages) || 0,
-      totalSharedExpense: Number(data.total_shared_expense) || 0,
-      totalProductionKg: Number(data.total_production_kg) || 0,
-      status: data.status,
-      notes: data.notes || '',
-      closedBy: data.closed_by || 'Admin',
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-    }));
+    return (data || []).map((data: any) => {
+      let meta: any = {};
+      if (data.notes) {
+        try {
+          meta = JSON.parse(data.notes);
+        } catch {}
+      }
+      return {
+        id: data.id,
+        productionDate: data.closing_date,
+        oilOpeningBalance: Number(meta.oilOpeningBalance) || 0,
+        oilPurchases: Number(meta.oilPurchases) || 0,
+        oilClosingBalance: Number(data.oil_balance_kg ?? meta.oilClosingBalance) || 0,
+        oilConsumed: Number(meta.oilConsumed) || 0,
+        oilCostPerKg: Number(meta.oilCostPerKg) || 0,
+        oilTotalExpense: Number(meta.oilTotalExpense) || 0,
+        productionWages: Number(meta.productionWages) || 0,
+        totalSharedExpense: Number(meta.totalSharedExpense) || 0,
+        totalProductionKg: Number(meta.totalProductionKg) || 0,
+        status: meta.status || 'closed',
+        notes: meta.userNotes ?? data.notes ?? '',
+        closedBy: data.closed_by || 'Admin',
+        createdAt: data.created_at,
+        updatedAt: data.created_at,
+      };
+    });
   }, { ttl: dbCache.TTL.DAILY_CLOSINGS, force });
 }
 
@@ -1063,8 +1071,8 @@ export async function fetchLatestOilBalance(): Promise<{ currentStock: number; a
   // 1. Check most recent closing
   const { data: lastClosing } = await supabase
     .from('daily_closings')
-    .select('production_date, oil_closing_balance, oil_cost_per_kg')
-    .order('production_date', { ascending: false })
+    .select('id, closing_date, oil_balance_kg, notes')
+    .order('closing_date', { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -1077,13 +1085,20 @@ export async function fetchLatestOilBalance(): Promise<{ currentStock: number; a
     .limit(1)
     .maybeSingle();
 
-  const currentStock = lastClosing ? Number(lastClosing.oil_closing_balance) : (oilIng ? Number(oilIng.current_stock) : 0);
-  const avgCost = lastClosing && Number(lastClosing.oil_cost_per_kg) > 0 ? Number(lastClosing.oil_cost_per_kg) : (oilIng ? Number(oilIng.avg_cost_per_unit) : 0);
+  let avgCost = Number(oilIng?.avg_cost_per_unit) || 150;
+  if (lastClosing?.notes) {
+    try {
+      const meta = JSON.parse(lastClosing.notes);
+      if (meta.oilCostPerKg) avgCost = Number(meta.oilCostPerKg);
+    } catch {}
+  }
+
+  const currentStock = lastClosing ? Number(lastClosing.oil_balance_kg) : (oilIng ? Number(oilIng.current_stock) : 0);
 
   return {
     currentStock,
     avgCost,
-    lastClosingDate: lastClosing?.production_date,
+    lastClosingDate: lastClosing?.closing_date,
   };
 }
 
@@ -1210,14 +1225,21 @@ export async function saveDailyClosing(params: {
   // 2. Check for an existing closing for this production date
   const { data: existingClosing } = await supabase
     .from('daily_closings')
-    .select('id, oil_consumed, oil_opening_balance, oil_closing_balance, notes')
-    .eq('production_date', productionDate)
+    .select('id, closing_date, oil_balance_kg, notes')
+    .eq('closing_date', productionDate)
     .maybeSingle();
 
   // 3. Determine previous available stock:
-  // If editing/re-saving for this date, reverse previously deducted net consumption
-  // so neither used oil nor leftover oil is counted twice.
-  const prevNetDeducted = existingClosing ? (Number(existingClosing.oil_consumed) || 0) : 0;
+  let prevNetDeducted = 0;
+  if (existingClosing?.notes) {
+    try {
+      const meta = JSON.parse(existingClosing.notes);
+      if (typeof meta.oilConsumed === 'number') prevNetDeducted = meta.oilConsumed;
+      else if (typeof meta.oilUsedKg === 'number' && typeof meta.leftoverOilKg === 'number') {
+        prevNetDeducted = Math.max(0, meta.oilUsedKg - meta.leftoverOilKg);
+      }
+    } catch {}
+  }
   const currentStockInDb = oilIng ? (Number(oilIng.current_stock) || 0) : 0;
   const previousAvailableStock = existingClosing
     ? roundStock(currentStockInDb + prevNetDeducted)
@@ -1236,8 +1258,6 @@ export async function saveDailyClosing(params: {
   }
 
   // 5. Backend Inventory Calculation:
-  // Final Oil Stock = Previous Available Stock - Oil Used + Leftover Oil
-  // Net Oil Consumed = Oil Used - Leftover Oil
   const oilUnitCost = params.oilCostPerKg ?? (Number(oilIng?.avg_cost_per_unit) || 150);
   const {
     netOilConsumedKg: oilConsumedKg,
@@ -1254,55 +1274,72 @@ export async function saveDailyClosing(params: {
   const totalSharedExpense = roundCurrency(oilTotalExpense + productionWages);
 
   // 6. Fetch completed production runs on that date
-  const { data: runs, error: runsErr } = await supabase
+  const { data: allRuns, error: runsErr } = await supabase
     .from('production_runs')
     .select(`
       id,
       product_id,
       actual_quantity,
       total_ingredient_cost,
-      products (name)
+      products (name),
+      start_time,
+      created_at
     `)
-    .eq('production_date', productionDate)
     .eq('status', 'completed');
 
   if (runsErr) throw runsErr;
 
-  const totalProductionKg = (runs || []).reduce((sum, r) => sum + (Number(r.actual_quantity) || 0), 0);
+  const runs = (allRuns || []).filter((r: any) =>
+    (r.start_time && r.start_time.startsWith(productionDate)) ||
+    (r.created_at && r.created_at.startsWith(productionDate))
+  );
+
+  const totalProductionKg = runs.reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
 
   // Metadata preserving exact cook inputs
   const metaPayload = {
+    oilOpeningBalance: previousAvailableStock,
+    oilPurchases,
+    oilClosingBalance: finalOilStock,
+    oilConsumed: oilConsumedKg,
     oilUsedKg: oilUsed,
     leftoverOilKg: leftoverOil,
-    previousAvailableStock,
-    finalOilStock,
+    oilCostPerKg: oilUnitCost,
+    oilTotalExpense,
+    productionWages,
+    totalSharedExpense,
+    totalProductionKg,
+    status: 'closed',
     userNotes: notes || '',
   };
 
-  const closingPayload = {
-    production_date: productionDate,
-    oil_opening_balance: previousAvailableStock,
-    oil_purchases: oilPurchases,
-    oil_closing_balance: finalOilStock,
-    oil_consumed: oilConsumedKg,
-    oil_cost_per_kg: oilUnitCost,
-    oil_total_expense: oilTotalExpense,
-    production_wages: productionWages,
-    total_shared_expense: totalSharedExpense,
-    total_production_kg: totalProductionKg,
-    status: 'closed',
+  const closingDbPayload = {
+    closing_date: productionDate,
+    oil_balance_kg: finalOilStock,
     notes: JSON.stringify(metaPayload),
     closed_by: closedBy,
-    updated_at: new Date().toISOString(),
   };
 
-  const { data: upsertedClosing, error: closingErr } = await supabase
-    .from('daily_closings')
-    .upsert(closingPayload, { onConflict: 'production_date' })
-    .select()
-    .single();
+  let upsertedClosing: any;
+  if (existingClosing?.id) {
+    const { data, error } = await supabase
+      .from('daily_closings')
+      .update(closingDbPayload)
+      .eq('id', existingClosing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    upsertedClosing = data;
+  } else {
+    const { data, error } = await supabase
+      .from('daily_closings')
+      .insert(closingDbPayload)
+      .select()
+      .single();
+    if (error) throw error;
+    upsertedClosing = data;
+  }
 
-  if (closingErr) throw closingErr;
   const closingId = upsertedClosing.id;
 
   // Group production runs by product
@@ -1327,10 +1364,31 @@ export async function saveDailyClosing(params: {
     productMap[pId].ingredientCost += ingCost;
   }
 
-  const productsSummary = Object.values(productMap);
+  let dailyBasicIngredientsExpense = 0;
+  try {
+    const { data: basicMovements } = await supabase
+      .from('stock_movements')
+      .select('quantity, cost_per_unit, item_name, reason')
+      .eq('item_type', 'ingredient')
+      .ilike('reason', `%${productionDate}%`);
 
-  // Distribute shared expenses proportionally by product weight
-  const allocations = allocateDailySharedExpenses(productsSummary, oilTotalExpense, productionWages);
+    if (basicMovements && basicMovements.length > 0) {
+      for (const m of basicMovements) {
+        const cost = Number(m.cost_per_unit) || 0;
+        const qty = Math.abs(Number(m.quantity) || 0);
+        dailyBasicIngredientsExpense += qty * cost;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not query basic ingredients expense for allocation', e);
+  }
+
+  const allocations = allocateDailySharedExpenses(
+    Object.values(productMap),
+    oilTotalExpense,
+    productionWages,
+    dailyBasicIngredientsExpense
+  );
 
   await supabase.from('daily_cost_allocations').delete().eq('closing_id', closingId);
 
@@ -1351,11 +1409,9 @@ export async function saveDailyClosing(params: {
       updated_at: new Date().toISOString(),
     }));
 
-    const { error: allocErr } = await supabase.from('daily_cost_allocations').insert(allocationsPayload);
-    if (allocErr) console.error('Failed to insert allocations', allocErr);
+    await supabase.from('daily_cost_allocations').insert(allocationsPayload);
   }
 
-  // 7. Update common oil inventory in ingredients table to final calculated stock
   if (oilIng) {
     await supabase
       .from('ingredients')
@@ -1366,14 +1422,12 @@ export async function saveDailyClosing(params: {
       })
       .eq('id', oilIng.id);
 
-    // Clean up previous stock movement for this daily closing to avoid duplicate logs on edit/re-save
     await supabase
       .from('stock_movements')
       .delete()
       .eq('item_id', oilIng.id)
       .eq('reference', `Daily Closing ${productionDate}`);
 
-    // Record synchronized stock movement ledger entry
     await supabase.from('stock_movements').insert({
       item_id: oilIng.id,
       item_type: 'ingredient',
@@ -1391,7 +1445,7 @@ export async function saveDailyClosing(params: {
     });
   }
 
-  invalidateAdminCache('daily_closings');
+    invalidateAdminCache('daily_closings');
   invalidateAdminCache('ingredients');
 
   return {
@@ -1450,25 +1504,29 @@ export async function fetchCostAllocations(dateOrClosingId: string): Promise<Dai
 // ============================================================================
 
 export async function fetchPackagingItems(productId?: string): Promise<PackagingItem[]> {
-  let query = supabase.from('packaging_items').select('*, products(name)').order('size_grams', { ascending: true });
-  if (productId) query = query.eq('product_id', productId);
+  try {
+    const { data, error } = await supabase.from('packaging_items').select('*').order('name', { ascending: true });
+    if (error) {
+      console.warn('Could not query packaging_items:', error);
+      return [];
+    }
 
-  const { data, error } = await query;
-  if (error) throw error;
-
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    productId: row.product_id,
-    productName: row.products?.name || '',
-    sizeLabel: row.size_label,
-    sizeGrams: Number(row.size_grams) || 100,
-    currentStock: Number(row.current_stock) || 0,
-    unitCost: Number(row.unit_cost) || 0,
-    packingLabourRate: Number(row.packing_labour_rate) || 1.00,
-    isActive: row.is_active ?? true,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      productId: row.product_id || '',
+      productName: row.name || '',
+      sizeLabel: row.size_label || row.name || '',
+      sizeGrams: Number(row.size_grams) || 100,
+      currentStock: Number(row.current_stock) || 0,
+      unitCost: Number(row.unit_cost ?? row.cost_per_unit) || 0,
+      packingLabourRate: Number(row.packing_labour_rate) || 1.00,
+      isActive: row.is_active ?? true,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at || row.created_at,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function savePackagingItem(item: Partial<PackagingItem> & { productId: string; sizeLabel: string }): Promise<PackagingItem> {

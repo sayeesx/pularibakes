@@ -83,16 +83,32 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
     }, 200);
   }, []);
 
-  // Load ALL packet types from catalogue (every packet can be chosen by cook)
+  // Load ALL in-stock packet types from catalogue (out-of-stock packets are hidden)
   useEffect(() => {
-    repo.listPacketTypes().then((types) => {
-      if (types && types.length > 0) {
-        setCatalogPackets(types.map((t) => ({ name: t.name, costPerPacket: t.costPerPacket })));
+    Promise.all([
+      repo.listPacketTypes(),
+      repo.listPackagingItems ? repo.listPackagingItems() : Promise.resolve([]),
+    ]).then(([types, packagingItems]) => {
+      let activeTypes = (types || []).filter((t) => t.isActive !== false);
+
+      if (packagingItems && packagingItems.length > 0) {
+        const outOfStockNames = new Set(
+          packagingItems
+            .filter((p: any) => (p.currentStock !== undefined && Number(p.currentStock) <= 0) || p.isActive === false)
+            .map((p: any) => (p.sizeLabel || p.name || '').trim().toLowerCase())
+        );
+        activeTypes = activeTypes.filter(
+          (t) => !outOfStockNames.has(t.name.trim().toLowerCase())
+        );
+      }
+
+      if (activeTypes.length > 0) {
+        setCatalogPackets(activeTypes.map((t) => ({ name: t.name, costPerPacket: t.costPerPacket })));
       } else {
-        setCatalogPackets(DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 })));
+        setCatalogPackets([]);
       }
     }).catch(() => {
-      setCatalogPackets(DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 })));
+      setCatalogPackets([]);
     });
   }, [repo]);
 
@@ -146,10 +162,15 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
 
   if (!batch) return null;
 
-  // All available packets shown directly to the cook:
-  const displayedPackets = catalogPackets.length > 0
-    ? catalogPackets
-    : DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 }));
+  // All in-stock packets shown directly to the cook (plus any packet already recorded on this batch):
+  const displayedPackets = useMemo(() => {
+    const existingPacketNames = Object.keys(quantities).filter((k) => (quantities[k] || 0) > 0);
+    const existingMissing = existingPacketNames
+      .filter((name) => !catalogPackets.some((cp) => cp.name.toLowerCase() === name.toLowerCase()))
+      .map((name) => ({ name, costPerPacket: 0 }));
+
+    return [...catalogPackets, ...existingMissing];
+  }, [catalogPackets, quantities]);
 
   // Open measurement modal instantly when selecting a packet
   const handleOpenRulerForPacket = (size: string, costPerPacket?: number) => {
@@ -394,6 +415,19 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
               </span>
             </div>
 
+            {displayedPackets.length === 0 ? (
+              <div className="p-6 text-center rounded-2xl bg-stone-50 dark:bg-[#141212] border border-stone-200 dark:border-[#282323] space-y-1">
+                <TbAlertCircle className="w-7 h-7 mx-auto text-amber-500 mb-1 stroke-[1.8]" />
+                <h4 className="text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam">
+                  {language === 'ml' ? 'സ്റ്റോക്കിൽ പാക്കറ്റുകൾ ലഭ്യമല്ല' : 'No Packets in Stock'}
+                </h4>
+                <p className="text-[11px] text-stone-400 font-malayalam">
+                  {language === 'ml'
+                    ? 'സ്റ്റോക്കില്ലാത്ത പാക്കറ്റുകൾ ഇവിടെ കാണിക്കുന്നില്ല'
+                    : 'Out of stock packets are hidden'}
+                </p>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               {displayedPackets.map((pkt) => {
                 const count = quantities[pkt.name] || 0;
@@ -463,6 +497,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
                 );
               })}
             </div>
+            )}
           </div>
 
           {/* Selected Packets Summary Strip */}

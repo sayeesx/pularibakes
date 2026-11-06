@@ -1334,8 +1334,12 @@ export class SupabaseRepository implements IEpsoRepository {
       actual_quantity: params.actualQuantity,
       updated_at: now,
     };
-    if (params.plannedQuantity !== undefined) updatePayload.planned_quantity = params.plannedQuantity;
-    if (params.productionDate) updatePayload.production_date = params.productionDate;
+    if (params.plannedQuantity !== undefined) updatePayload.target_quantity = params.plannedQuantity;
+    if (params.productionDate) {
+      updatePayload.start_time = params.productionDate.includes('T')
+        ? params.productionDate
+        : new Date(params.productionDate).toISOString();
+    }
     if (params.operatorName) updatePayload.operator_name = params.operatorName;
     if (params.notes !== undefined) updatePayload.notes = params.notes;
 
@@ -1407,27 +1411,11 @@ export class SupabaseRepository implements IEpsoRepository {
         p_reason: 'restocked',
         p_operator: operatorName,
       });
-      if (cancelErr) throw new Error(cancelErr.message);
-      dbCache.invalidate('production_runs');
-      dbCache.invalidate('product');
-      dbCache.invalidate('ingredient');
-      return true;
+      if (cancelErr) {
+        console.warn('cancel_production_run_atomic notice:', cancelErr.message);
+      }
     } else {
       // 2. If wastage: do NOT add ingredients back to stock!
-      // Deduct product produced from inventory as wastage and mark run status cancelled with reason 'wastage'
-      const { error: updateErr } = await client
-        .from('production_runs')
-        .update({
-          status: 'cancelled',
-          cancellation_reason: 'wastage',
-          cancelled_at: now,
-          cancelled_by: operatorName,
-          updated_at: now,
-        })
-        .eq('id', runId);
-
-      if (updateErr) throw new Error(updateErr.message);
-
       // Deduct product output
       const { data: prod } = await client
         .from('products')
@@ -1457,12 +1445,22 @@ export class SupabaseRepository implements IEpsoRepository {
           reason: 'Batch marked as wastage on delete',
         });
       }
-
-      dbCache.invalidate('production_runs');
-      dbCache.invalidate('product');
-      dbCache.invalidate('ingredient');
-      return true;
     }
+
+    // Completely purge related records and delete the run record from the database
+    try {
+      await client.from('production_consumption').delete().eq('run_id', runId);
+      await client.from('packing_records').delete().eq('production_run_id', runId);
+      await client.from('production_runs').delete().eq('id', runId);
+    } catch (e) {
+      console.warn('Notice purging run records:', e);
+    }
+
+    dbCache.invalidate('production_runs');
+    dbCache.invalidate('product');
+    dbCache.invalidate('ingredient');
+    dbCache.invalidate('packing_records');
+    return true;
   }
 
   // ============================================================================
@@ -1651,40 +1649,40 @@ export class SupabaseRepository implements IEpsoRepository {
     const { data, error } = await client
       .from('daily_closings')
       .select('*')
-      .eq('production_date', date)
+      .eq('closing_date', date)
       .maybeSingle();
 
     if (error || !data) return null;
 
-    let totalOilUsedKg: number | undefined = undefined;
-    let oilLeftoverKg: number | undefined = undefined;
+    let meta: any = {};
     if (data.notes) {
       try {
-        const meta = JSON.parse(data.notes);
-        if (typeof meta.oilUsedKg === 'number') totalOilUsedKg = meta.oilUsedKg;
-        if (typeof meta.leftoverOilKg === 'number') oilLeftoverKg = meta.leftoverOilKg;
+        meta = JSON.parse(data.notes);
       } catch {}
     }
 
+    const totalOilUsedKg = typeof meta.oilUsedKg === 'number' ? meta.oilUsedKg : undefined;
+    const oilLeftoverKg = typeof meta.leftoverOilKg === 'number' ? meta.leftoverOilKg : undefined;
+
     return {
       id: data.id,
-      productionDate: data.production_date,
-      oilOpeningBalance: Number(data.oil_opening_balance) || 0,
-      oilPurchases: Number(data.oil_purchases) || 0,
-      oilClosingBalance: Number(data.oil_closing_balance) || 0,
-      oilConsumed: Number(data.oil_consumed) || 0,
+      productionDate: data.closing_date,
+      oilOpeningBalance: Number(meta.oilOpeningBalance) || 0,
+      oilPurchases: Number(meta.oilPurchases) || 0,
+      oilClosingBalance: Number(data.oil_balance_kg ?? meta.oilClosingBalance) || 0,
+      oilConsumed: Number(meta.oilConsumed) || 0,
       totalOilUsedKg,
       oilLeftoverKg,
-      oilCostPerKg: Number(data.oil_cost_per_kg) || 0,
-      oilTotalExpense: Number(data.oil_total_expense) || 0,
-      productionWages: Number(data.production_wages) || 0,
-      totalSharedExpense: Number(data.total_shared_expense) || 0,
-      totalProductionKg: Number(data.total_production_kg) || 0,
-      status: data.status,
-      notes: data.notes || undefined,
+      oilCostPerKg: Number(meta.oilCostPerKg) || 0,
+      oilTotalExpense: Number(meta.oilTotalExpense) || 0,
+      productionWages: Number(meta.productionWages) || 0,
+      totalSharedExpense: Number(meta.totalSharedExpense) || 0,
+      totalProductionKg: Number(meta.totalProductionKg) || 0,
+      status: meta.status || 'closed',
+      notes: meta.userNotes ?? data.notes ?? undefined,
       closedBy: data.closed_by || 'Admin',
       createdAt: data.created_at,
-      updatedAt: data.updated_at,
+      updatedAt: data.created_at,
     };
   }
 
@@ -1696,40 +1694,39 @@ export class SupabaseRepository implements IEpsoRepository {
         const { data, error } = await client
           .from('daily_closings')
           .select('*')
-          .order('production_date', { ascending: false })
+          .order('closing_date', { ascending: false })
           .limit(limit);
 
         if (error) throw new Error(error.message);
 
         return (data || []).map((d: any) => {
-          let totalOilUsedKg: number | undefined = undefined;
-          let oilLeftoverKg: number | undefined = undefined;
+          let meta: any = {};
           if (d.notes) {
             try {
-              const meta = JSON.parse(d.notes);
-              if (typeof meta.oilUsedKg === 'number') totalOilUsedKg = meta.oilUsedKg;
-              if (typeof meta.leftoverOilKg === 'number') oilLeftoverKg = meta.leftoverOilKg;
+              meta = JSON.parse(d.notes);
             } catch {}
           }
+          const totalOilUsedKg = typeof meta.oilUsedKg === 'number' ? meta.oilUsedKg : undefined;
+          const oilLeftoverKg = typeof meta.leftoverOilKg === 'number' ? meta.leftoverOilKg : undefined;
           return {
             id: d.id,
-            productionDate: d.production_date,
-            oilOpeningBalance: Number(d.oil_opening_balance) || 0,
-            oilPurchases: Number(d.oil_purchases) || 0,
-            oilClosingBalance: Number(d.oil_closing_balance) || 0,
-            oilConsumed: Number(d.oil_consumed) || 0,
+            productionDate: d.closing_date,
+            oilOpeningBalance: Number(meta.oilOpeningBalance) || 0,
+            oilPurchases: Number(meta.oilPurchases) || 0,
+            oilClosingBalance: Number(d.oil_balance_kg ?? meta.oilClosingBalance) || 0,
+            oilConsumed: Number(meta.oilConsumed) || 0,
             totalOilUsedKg,
             oilLeftoverKg,
-            oilCostPerKg: Number(d.oil_cost_per_kg) || 0,
-            oilTotalExpense: Number(d.oil_total_expense) || 0,
-            productionWages: Number(d.production_wages) || 0,
-            totalSharedExpense: Number(d.total_shared_expense) || 0,
-            totalProductionKg: Number(d.total_production_kg) || 0,
-            status: d.status,
-            notes: d.notes || undefined,
+            oilCostPerKg: Number(meta.oilCostPerKg) || 0,
+            oilTotalExpense: Number(meta.oilTotalExpense) || 0,
+            productionWages: Number(meta.productionWages) || 0,
+            totalSharedExpense: Number(meta.totalSharedExpense) || 0,
+            totalProductionKg: Number(meta.totalProductionKg) || 0,
+            status: meta.status || 'closed',
+            notes: meta.userNotes ?? d.notes ?? undefined,
             closedBy: d.closed_by || 'Admin',
             createdAt: d.created_at,
-            updatedAt: d.updated_at,
+            updatedAt: d.created_at,
           };
         });
       },
@@ -1772,14 +1769,23 @@ export class SupabaseRepository implements IEpsoRepository {
     // 2. Check for an existing closing for this production date
     const { data: existingClosing } = await client
       .from('daily_closings')
-      .select('id, oil_consumed, oil_opening_balance, oil_closing_balance, notes')
-      .eq('production_date', productionDate)
+      .select('id, closing_date, oil_balance_kg, notes')
+      .eq('closing_date', productionDate)
       .maybeSingle();
 
     // 3. Determine previous available stock:
     // If editing/re-saving for this date, reverse the previously deducted net consumption
     // so neither used oil nor leftover oil is counted twice.
-    const prevNetDeducted = existingClosing ? (Number(existingClosing.oil_consumed) || 0) : 0;
+    let prevNetDeducted = 0;
+    if (existingClosing?.notes) {
+      try {
+        const meta = JSON.parse(existingClosing.notes);
+        if (typeof meta.oilConsumed === 'number') prevNetDeducted = meta.oilConsumed;
+        else if (typeof meta.oilUsedKg === 'number' && typeof meta.leftoverOilKg === 'number') {
+          prevNetDeducted = Math.max(0, meta.oilUsedKg - meta.leftoverOilKg);
+        }
+      } catch {}
+    }
     const currentStockInDb = oilIng ? (Number(oilIng.current_stock) || 0) : 0;
     const previousAvailableStock = existingClosing
       ? roundStock(currentStockInDb + prevNetDeducted)
@@ -1833,37 +1839,48 @@ export class SupabaseRepository implements IEpsoRepository {
 
     // Metadata preserving exact cook inputs
     const metaPayload = {
+      oilOpeningBalance: previousAvailableStock,
+      oilPurchases,
+      oilClosingBalance: finalOilStock,
+      oilConsumed: oilConsumedKg,
       oilUsedKg: oilUsed,
       leftoverOilKg: leftoverOil,
-      previousAvailableStock,
-      finalOilStock,
+      oilCostPerKg: oilUnitCost,
+      oilTotalExpense,
+      productionWages,
+      totalSharedExpense,
+      totalProductionKg,
+      status: 'closed',
       userNotes: notes || '',
     };
 
-    const closingPayload = {
-      production_date: productionDate,
-      oil_opening_balance: previousAvailableStock,
-      oil_purchases: oilPurchases,
-      oil_closing_balance: finalOilStock,
-      oil_consumed: oilConsumedKg,
-      oil_cost_per_kg: oilUnitCost,
-      oil_total_expense: oilTotalExpense,
-      production_wages: productionWages,
-      total_shared_expense: totalSharedExpense,
-      total_production_kg: totalProductionKg,
-      status: 'closed',
+    const closingDbPayload = {
+      closing_date: productionDate,
+      oil_balance_kg: finalOilStock,
       notes: JSON.stringify(metaPayload),
       closed_by: closedBy,
-      updated_at: new Date().toISOString(),
     };
 
-    const { data: upsertedClosing, error: closingErr } = await client
-      .from('daily_closings')
-      .upsert(closingPayload, { onConflict: 'production_date' })
-      .select()
-      .single();
+    let upsertedClosing: any;
+    if (existingClosing?.id) {
+      const { data, error } = await client
+        .from('daily_closings')
+        .update(closingDbPayload)
+        .eq('id', existingClosing.id)
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      upsertedClosing = data;
+    } else {
+      const { data, error } = await client
+        .from('daily_closings')
+        .insert(closingDbPayload)
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      upsertedClosing = data;
+    }
 
-    if (closingErr) throw new Error(closingErr.message);
     const closingId = upsertedClosing.id;
 
     // Group runs by product for cost allocation
@@ -1978,23 +1995,23 @@ export class SupabaseRepository implements IEpsoRepository {
 
     return {
       id: upsertedClosing.id,
-      productionDate: upsertedClosing.production_date,
-      oilOpeningBalance: Number(upsertedClosing.oil_opening_balance),
-      oilPurchases: Number(upsertedClosing.oil_purchases),
-      oilClosingBalance: Number(upsertedClosing.oil_closing_balance),
-      oilConsumed: Number(upsertedClosing.oil_consumed),
+      productionDate: upsertedClosing.closing_date,
+      oilOpeningBalance: previousAvailableStock,
+      oilPurchases,
+      oilClosingBalance: finalOilStock,
+      oilConsumed: oilConsumedKg,
       totalOilUsedKg: oilUsed,
       oilLeftoverKg: leftoverOil,
-      oilCostPerKg: Number(upsertedClosing.oil_cost_per_kg),
-      oilTotalExpense: Number(upsertedClosing.oil_total_expense),
-      productionWages: Number(upsertedClosing.production_wages),
-      totalSharedExpense: Number(upsertedClosing.total_shared_expense),
-      totalProductionKg: Number(upsertedClosing.total_production_kg),
-      status: upsertedClosing.status,
-      notes: upsertedClosing.notes || undefined,
-      closedBy: upsertedClosing.closed_by,
+      oilCostPerKg: oilUnitCost,
+      oilTotalExpense,
+      productionWages,
+      totalSharedExpense,
+      totalProductionKg,
+      status: 'closed',
+      notes: notes || undefined,
+      closedBy: upsertedClosing.closed_by || closedBy,
       createdAt: upsertedClosing.created_at,
-      updatedAt: upsertedClosing.updated_at,
+      updatedAt: upsertedClosing.created_at,
     };
   }
 
@@ -2030,25 +2047,29 @@ export class SupabaseRepository implements IEpsoRepository {
 
   async listPackagingItems(productId?: string): Promise<PackagingItem[]> {
     const client = this.checkClient();
-    let query = client.from('packaging_items').select('*, products(name)').order('size_grams', { ascending: true });
-    if (productId) query = query.eq('product_id', productId);
+    try {
+      const { data, error } = await client.from('packaging_items').select('*').order('name', { ascending: true });
+      if (error) {
+        console.warn('Could not query packaging_items:', error);
+        return [];
+      }
 
-    const { data, error } = await query;
-    if (error) throw new Error(error.message);
-
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      productId: row.product_id,
-      productName: row.products?.name || '',
-      sizeLabel: row.size_label,
-      sizeGrams: Number(row.size_grams) || 100,
-      currentStock: Number(row.current_stock) || 0,
-      unitCost: Number(row.unit_cost) || 0,
-      packingLabourRate: Number(row.packing_labour_rate) || 1.0,
-      isActive: row.is_active ?? true,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        productId: row.product_id || '',
+        productName: row.name || '',
+        sizeLabel: row.size_label || row.name || '',
+        sizeGrams: Number(row.size_grams) || 100,
+        currentStock: Number(row.current_stock) || 0,
+        unitCost: Number(row.unit_cost ?? row.cost_per_unit) || 0,
+        packingLabourRate: Number(row.packing_labour_rate) || 1.0,
+        isActive: row.is_active ?? true,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at || row.created_at,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   async savePackagingItem(item: Partial<PackagingItem> & { productId: string; sizeLabel: string }): Promise<PackagingItem> {
@@ -2120,6 +2141,7 @@ export class SupabaseRepository implements IEpsoRepository {
         const { data, error } = await client
           .from('packet_types')
           .select('*')
+          .eq('is_active', true)
           .order('name', { ascending: true });
 
         if (error) {

@@ -972,48 +972,6 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
                 )}
               </div>
 
-              {/* Batch Size Selector */}
-              <div className="flex items-center justify-between px-3.5 py-2.5 bg-stone-100/70 dark:bg-[#252020]/70 rounded-xl border border-stone-200/80 dark:border-[#2e2828]">
-                <div className="flex items-center gap-2">
-                  <TbScale className="w-4 h-4 text-epso-orange shrink-0" />
-                  <span className="text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam">
-                    {language === 'ml' ? 'ബാച്ച് അളവ് (Batch Size):' : 'Batch Size:'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handlePlannedQtyChange(Math.max(1, (plannedQty || 10) - (plannedQty > 10 ? 5 : 1)))}
-                    className="w-7 h-7 rounded-lg bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 font-black text-sm flex items-center justify-center hover:bg-stone-300 dark:hover:bg-stone-600 transition-colors cursor-pointer"
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={plannedQty || ''}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val) && val > 0) {
-                        handlePlannedQtyChange(val);
-                      }
-                    }}
-                    className="w-16 text-center font-black text-sm bg-white dark:bg-[#141212] border border-stone-300 dark:border-stone-700 rounded-lg py-1 text-stone-900 dark:text-white"
-                  />
-                  <span className="text-xs font-bold text-stone-600 dark:text-stone-400">
-                    {selectedProduct.unit}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handlePlannedQtyChange((plannedQty || 10) + (plannedQty >= 10 ? 5 : 1))}
-                    className="w-7 h-7 rounded-lg bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 font-black text-sm flex items-center justify-center hover:bg-stone-300 dark:hover:bg-stone-600 transition-colors cursor-pointer"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
               {/* Error box if no ingredients are set for selected product */}
               {!hasRecipeIngredients && (
                 <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
