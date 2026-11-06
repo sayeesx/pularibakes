@@ -81,7 +81,7 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
   const [ingredientSearch, setIngredientSearch] = useState<string>('');
   const [isModalExpanded, setIsModalExpanded] = useState<boolean>(false);
   const [plannedQty, setPlannedQty] = useState<number>(10);
-  const [actualOutputQty, setActualOutputQty] = useState<number>(0);
+  const [actualOutputQty, setActualOutputQty] = useState<number>(10);
   const [productionDate, setProductionDate] = useState<string>(getTodayDateStr);
   const [operator, setOperator] = useState<string>(staffName);
   const [notes, setNotes] = useState<string>('');
@@ -214,7 +214,7 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
         setActiveRulerItem(null);
         setItemToDelete(null);
         setPlannedQty(10);
-        setActualOutputQty(0);
+        setActualOutputQty(10);
         setProductionDate(getTodayDateStr());
         setOperator(staffName);
         setNotes('');
@@ -292,7 +292,7 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
     );
     const initialQty = prodRecipe?.baseOutputQuantity || 10;
     setPlannedQty(initialQty);
-    setActualOutputQty(0);
+    setActualOutputQty(initialQty);
 
     // Pre-populate with recipe ingredients scaled for base recipe output
     if (prodRecipe && prodRecipe.ingredients && prodRecipe.ingredients.length > 0) {
@@ -446,7 +446,13 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
 
   const handleFinalSubmit = async () => {
     if (!selectedProduct) return;
-    if (runToEdit && actualOutputQty <= 0) {
+
+    const effectiveActualQty =
+      (actualOutputQty > 0 ? actualOutputQty : plannedQty) ||
+      activeRecipe?.baseOutputQuantity ||
+      10;
+
+    if (effectiveActualQty <= 0) {
       addToast(
         language === 'ml' ? 'ശരിയായ അളവ് നൽകുക' : 'Please provide a valid output quantity',
         'warning'
@@ -500,8 +506,8 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
       if (runToEdit) {
         saved = await repo.updateProductionRun({
           runId: runToEdit.id,
-          plannedQuantity: plannedQty,
-          actualQuantity: actualOutputQty,
+          plannedQuantity: plannedQty > 0 ? plannedQty : effectiveActualQty,
+          actualQuantity: effectiveActualQty,
           productionDate,
           operatorName: operator.trim() || 'Kitchen Staff',
           notes: notes.trim() || undefined,
@@ -514,8 +520,8 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
           recipeId: activeRecipe?.id,
           recipeVersion: activeRecipe?.version,
           productionDate,
-          plannedQuantity: plannedQty,
-          actualQuantity: 0,
+          plannedQuantity: plannedQty > 0 ? plannedQty : effectiveActualQty,
+          actualQuantity: effectiveActualQty,
           unit: selectedProduct.unit,
           operatorName: operator.trim() || 'Kitchen Staff',
           notes: notes.trim() || undefined,
@@ -971,6 +977,48 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
                 )}
               </div>
 
+              {/* Batch Size Selector */}
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-stone-100/70 dark:bg-[#252020]/70 rounded-xl border border-stone-200/80 dark:border-[#2e2828]">
+                <div className="flex items-center gap-2">
+                  <TbScale className="w-4 h-4 text-epso-orange shrink-0" />
+                  <span className="text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam">
+                    {language === 'ml' ? 'ബാച്ച് അളവ് (Batch Size):' : 'Batch Size:'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handlePlannedQtyChange(Math.max(1, (plannedQty || 10) - (plannedQty > 10 ? 5 : 1)))}
+                    className="w-7 h-7 rounded-lg bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 font-black text-sm flex items-center justify-center hover:bg-stone-300 dark:hover:bg-stone-600 transition-colors cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={plannedQty || ''}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!isNaN(val) && val > 0) {
+                        handlePlannedQtyChange(val);
+                      }
+                    }}
+                    className="w-16 text-center font-black text-sm bg-white dark:bg-[#141212] border border-stone-300 dark:border-stone-700 rounded-lg py-1 text-stone-900 dark:text-white"
+                  />
+                  <span className="text-xs font-bold text-stone-600 dark:text-stone-400">
+                    {selectedProduct.unit}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handlePlannedQtyChange((plannedQty || 10) + (plannedQty >= 10 ? 5 : 1))}
+                    className="w-7 h-7 rounded-lg bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 font-black text-sm flex items-center justify-center hover:bg-stone-300 dark:hover:bg-stone-600 transition-colors cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
               {/* Error box if no ingredients are set for selected product */}
               {!hasRecipeIngredients && (
                 <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs text-red-700 dark:text-red-300 flex items-center gap-2">
@@ -1123,15 +1171,13 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
                   </h4>
                 </div>
                 <div className="text-right shrink-0">
-                  <span className="text-xs font-black text-amber-600 dark:text-amber-400 font-malayalam block">
-                    {runToEdit && actualOutputQty > 0
-                      ? `${actualOutputQty} ${selectedProduct.unit}`
-                      : 'നിർമ്മാണ ശേഷം തൂക്കുക'}
+                  <span className="text-sm font-black text-amber-600 dark:text-amber-400 font-sans block">
+                    {`${actualOutputQty > 0 ? actualOutputQty : plannedQty} ${selectedProduct.unit}`}
                   </span>
                   <p className="text-[10px] font-bold text-stone-500 dark:text-stone-400 font-malayalam mt-0.5">
-                    {runToEdit && actualOutputQty > 0
+                    {runToEdit
                       ? (language === 'ml' ? 'ഉൽപ്പാദിപ്പിച്ചത്' : 'Produced')
-                      : 'സ്കെയിൽ വഴി രേഖപ്പെടുത്താം'}
+                      : (language === 'ml' ? 'ഉൽപ്പാദന അളവ്' : 'Target Output')}
                   </p>
                 </div>
               </div>

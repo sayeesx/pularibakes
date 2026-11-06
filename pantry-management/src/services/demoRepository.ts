@@ -574,8 +574,14 @@ export class DemoRepository implements IEpsoRepository {
     }
 
     // 2. Increment product stock
+    const effectiveActualQty =
+      params.actualQuantity > 0
+        ? params.actualQuantity
+        : params.plannedQuantity > 0
+        ? params.plannedQuantity
+        : 10;
     const prevProdStock = product.currentStock;
-    product.currentStock += params.actualQuantity;
+    product.currentStock += effectiveActualQty;
     product.updatedAt = now;
 
     movements.unshift({
@@ -584,7 +590,7 @@ export class DemoRepository implements IEpsoRepository {
       itemType: 'product',
       itemName: product.name,
       movementType: 'production_output',
-      quantity: params.actualQuantity,
+      quantity: effectiveActualQty,
       unit: params.unit,
       previousBalance: prevProdStock,
       newBalance: product.currentStock,
@@ -609,8 +615,8 @@ export class DemoRepository implements IEpsoRepository {
       recipeId: params.recipeId,
       recipeVersion: params.recipeVersion,
       productionDate: params.productionDate,
-      plannedQuantity: params.plannedQuantity,
-      actualQuantity: params.actualQuantity,
+      plannedQuantity: params.plannedQuantity > 0 ? params.plannedQuantity : effectiveActualQty,
+      actualQuantity: effectiveActualQty,
       unit: params.unit,
       status: 'completed',
       operatorName: params.operatorName,

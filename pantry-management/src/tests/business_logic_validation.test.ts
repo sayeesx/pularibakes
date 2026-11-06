@@ -570,5 +570,34 @@ describe('Pulari Bakes Comprehensive Business Logic & Calculation Validation (Se
         expect(manifestTables).toContain(t);
       }
     });
+
+    it('guarantees production run actual quantity is strictly positive even if 0 was passed', async () => {
+      const repo = new DemoRepository();
+      const product = await repo.createProduct({
+        name: 'Positive Quantity Test Cake',
+        unit: 'kg',
+        currentStock: 0,
+        wholesalePrice: 350,
+        isActive: true,
+      });
+
+      // Pass actualQuantity: 0 to simulate initial modal state
+      const run = await repo.recordProductionRun({
+        runNumber: `PUL-POS-TEST-${Date.now()}`,
+        productId: product.id,
+        productionDate: '2026-11-06',
+        plannedQuantity: 15,
+        actualQuantity: 0, // Should be normalized to positive planned quantity
+        unit: 'kg',
+        operatorName: 'Test Baker',
+        ingredientsConsumed: [],
+      });
+
+      expect(run.actualQuantity).toBeGreaterThan(0);
+      expect(run.actualQuantity).toBe(15);
+
+      const updatedProduct = await repo.getProductById(product.id);
+      expect(updatedProduct?.currentStock).toBe(15);
+    });
   });
 });

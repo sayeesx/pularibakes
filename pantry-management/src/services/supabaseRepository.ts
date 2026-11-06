@@ -1127,11 +1127,18 @@ export class SupabaseRepository implements IEpsoRepository {
   }): Promise<ProductionRun> {
     const client = this.checkClient();
 
+    const effectiveActualQty =
+      params.actualQuantity > 0
+        ? params.actualQuantity
+        : params.plannedQuantity > 0
+        ? params.plannedQuantity
+        : 10;
+
     // Invoking PostgreSQL atomic stored procedure
     const { data: rpcRes, error } = await client.rpc('record_production_run_atomic', {
       p_product_id: params.productId,
       p_recipe_id: params.recipeId || null,
-      p_actual_quantity: params.actualQuantity,
+      p_actual_quantity: effectiveActualQty,
       p_unit: params.unit || 'kg',
       p_operator: params.operatorName || 'Staff',
       p_notes: params.notes || null,
