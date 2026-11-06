@@ -1127,18 +1127,24 @@ export class SupabaseRepository implements IEpsoRepository {
   }): Promise<ProductionRun> {
     const client = this.checkClient();
 
-    const effectiveActualQty =
-      params.actualQuantity > 0
-        ? params.actualQuantity
-        : params.plannedQuantity > 0
+    const effectiveTargetQty =
+      params.plannedQuantity > 0
         ? params.plannedQuantity
+        : params.actualQuantity > 0
+        ? params.actualQuantity
         : 10;
 
+    const effectiveRpcActualQty =
+      params.actualQuantity > 0
+        ? params.actualQuantity
+        : effectiveTargetQty;
+
     // Invoking PostgreSQL atomic stored procedure
+    // Note: p_ingredients items MUST include actual_quantity to avoid null current_stock violations
     const { data: rpcRes, error } = await client.rpc('record_production_run_atomic', {
       p_product_id: params.productId,
       p_recipe_id: params.recipeId || null,
-      p_actual_quantity: effectiveActualQty,
+      p_actual_quantity: effectiveRpcActualQty,
       p_unit: params.unit || 'kg',
       p_operator: params.operatorName || 'Staff',
       p_notes: params.notes || null,
@@ -1147,9 +1153,12 @@ export class SupabaseRepository implements IEpsoRepository {
       p_packets: [],
       p_ingredients: params.ingredientsConsumed.map((i) => ({
         ingredient_id: i.ingredientId,
+        actual_quantity: i.actualQuantity,
         quantity: i.actualQuantity,
+        expected_quantity: i.expectedQuantity,
         unit: i.unit,
         unit_cost: i.unitCost || 0,
+        total_cost: i.totalCost || 0,
       })),
     });
 
@@ -1157,6 +1166,43 @@ export class SupabaseRepository implements IEpsoRepository {
 
     const runId = typeof rpcRes === 'string' ? rpcRes : (rpcRes?.production_run_id || rpcRes?.id);
     if (!runId) throw new Error('Failed to retrieve created production run ID');
+
+    // If batch was created as unweighed (actualQuantity <= 0), set actual_quantity to 0
+    // and reverse premature product stock addition until the cook weighs the batch on the card
+    const isUnweighedAtCreation = !params.actualQuantity || params.actualQuantity <= 0;
+    if (isUnweighedAtCreation) {
+      await client
+        .from('production_runs')
+        .update({
+          actual_quantity: 0,
+          target_quantity: effectiveTargetQty,
+        })
+        .eq('id', runId);
+
+      // Revert premature finished goods stock increment on product
+      try {
+        const { data: prod } = await client
+          .from('products')
+          .select('current_stock')
+          .eq('id', params.productId)
+          .maybeSingle();
+
+        if (prod) {
+          const correctedStock = Number(Math.max(0, (prod.current_stock || 0) - effectiveRpcActualQty).toFixed(3));
+          await client.from('products').update({ current_stock: correctedStock }).eq('id', params.productId);
+        }
+
+        // Remove premature finished output movement
+        await client
+          .from('stock_movements')
+          .delete()
+          .eq('item_id', params.productId)
+          .eq('movement_type', 'production_output')
+          .eq('quantity', effectiveRpcActualQty);
+      } catch (revErr) {
+        console.warn('Non-critical: could not revert premature stock addition', revErr);
+      }
+    }
 
     dbCache.invalidate('production_runs');
     dbCache.invalidate('product');

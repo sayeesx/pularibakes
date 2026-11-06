@@ -571,33 +571,44 @@ describe('Pulari Bakes Comprehensive Business Logic & Calculation Validation (Se
       }
     });
 
-    it('guarantees production run actual quantity is strictly positive even if 0 was passed', async () => {
+    it('supports unweighed production batch creation (actualQuantity: 0) and setting output weight on batch card', async () => {
       const repo = new DemoRepository();
       const product = await repo.createProduct({
-        name: 'Positive Quantity Test Cake',
+        name: 'Unweighed Test Cake',
         unit: 'kg',
         currentStock: 0,
         wholesalePrice: 350,
         isActive: true,
       });
 
-      // Pass actualQuantity: 0 to simulate initial modal state
+      // Pass actualQuantity: 0 because batch quantity is set on the batch card after cooking
       const run = await repo.recordProductionRun({
-        runNumber: `PUL-POS-TEST-${Date.now()}`,
+        runNumber: `PUL-UNW-TEST-${Date.now()}`,
         productId: product.id,
         productionDate: '2026-11-06',
         plannedQuantity: 15,
-        actualQuantity: 0, // Should be normalized to positive planned quantity
+        actualQuantity: 0, // Unweighed batch
         unit: 'kg',
         operatorName: 'Test Baker',
         ingredientsConsumed: [],
       });
 
-      expect(run.actualQuantity).toBeGreaterThan(0);
-      expect(run.actualQuantity).toBe(15);
+      expect(run.actualQuantity).toBe(0);
+      expect(run.plannedQuantity).toBe(15);
 
-      const updatedProduct = await repo.getProductById(product.id);
-      expect(updatedProduct?.currentStock).toBe(15);
+      // Finished stock should NOT be credited before weighing
+      const productBeforeWeighing = await repo.getProductById(product.id);
+      expect(productBeforeWeighing?.currentStock).toBe(0);
+
+      // Cook weighs the finished batch on the batch card
+      const weighedRun = await repo.updateProductionRun({
+        runId: run.id,
+        actualQuantity: 15.2,
+      });
+
+      expect(weighedRun.actualQuantity).toBe(15.2);
+      const productAfterWeighing = await repo.getProductById(product.id);
+      expect(productAfterWeighing?.currentStock).toBe(15.2);
     });
   });
 });

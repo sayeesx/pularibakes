@@ -81,7 +81,7 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
   const [ingredientSearch, setIngredientSearch] = useState<string>('');
   const [isModalExpanded, setIsModalExpanded] = useState<boolean>(false);
   const [plannedQty, setPlannedQty] = useState<number>(10);
-  const [actualOutputQty, setActualOutputQty] = useState<number>(10);
+  const [actualOutputQty, setActualOutputQty] = useState<number>(0);
   const [productionDate, setProductionDate] = useState<string>(getTodayDateStr);
   const [operator, setOperator] = useState<string>(staffName);
   const [notes, setNotes] = useState<string>('');
@@ -214,7 +214,7 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
         setActiveRulerItem(null);
         setItemToDelete(null);
         setPlannedQty(10);
-        setActualOutputQty(10);
+        setActualOutputQty(0);
         setProductionDate(getTodayDateStr());
         setOperator(staffName);
         setNotes('');
@@ -292,7 +292,7 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
     );
     const initialQty = prodRecipe?.baseOutputQuantity || 10;
     setPlannedQty(initialQty);
-    setActualOutputQty(initialQty);
+    setActualOutputQty(0);
 
     // Pre-populate with recipe ingredients scaled for base recipe output
     if (prodRecipe && prodRecipe.ingredients && prodRecipe.ingredients.length > 0) {
@@ -447,12 +447,7 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
   const handleFinalSubmit = async () => {
     if (!selectedProduct) return;
 
-    const effectiveActualQty =
-      (actualOutputQty > 0 ? actualOutputQty : plannedQty) ||
-      activeRecipe?.baseOutputQuantity ||
-      10;
-
-    if (effectiveActualQty <= 0) {
+    if (runToEdit && actualOutputQty <= 0) {
       addToast(
         language === 'ml' ? 'ശരിയായ അളവ് നൽകുക' : 'Please provide a valid output quantity',
         'warning'
@@ -506,8 +501,8 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
       if (runToEdit) {
         saved = await repo.updateProductionRun({
           runId: runToEdit.id,
-          plannedQuantity: plannedQty > 0 ? plannedQty : effectiveActualQty,
-          actualQuantity: effectiveActualQty,
+          plannedQuantity: plannedQty > 0 ? plannedQty : 10,
+          actualQuantity: actualOutputQty,
           productionDate,
           operatorName: operator.trim() || 'Kitchen Staff',
           notes: notes.trim() || undefined,
@@ -520,8 +515,8 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
           recipeId: activeRecipe?.id,
           recipeVersion: activeRecipe?.version,
           productionDate,
-          plannedQuantity: plannedQty > 0 ? plannedQty : effectiveActualQty,
-          actualQuantity: effectiveActualQty,
+          plannedQuantity: plannedQty > 0 ? plannedQty : 10,
+          actualQuantity: 0, // Unweighed: batch quantity is set on the batch card after cooking
           unit: selectedProduct.unit,
           operatorName: operator.trim() || 'Kitchen Staff',
           notes: notes.trim() || undefined,
@@ -1172,12 +1167,14 @@ export const StartProductionModal: React.FC<StartProductionModalProps> = ({
                 </div>
                 <div className="text-right shrink-0">
                   <span className="text-sm font-black text-amber-600 dark:text-amber-400 font-sans block">
-                    {`${actualOutputQty > 0 ? actualOutputQty : plannedQty} ${selectedProduct.unit}`}
+                    {runToEdit && actualOutputQty > 0
+                      ? `${actualOutputQty} ${selectedProduct.unit}`
+                      : `${plannedQty} ${selectedProduct.unit}`}
                   </span>
                   <p className="text-[10px] font-bold text-stone-500 dark:text-stone-400 font-malayalam mt-0.5">
-                    {runToEdit
+                    {runToEdit && actualOutputQty > 0
                       ? (language === 'ml' ? 'ഉൽപ്പാദിപ്പിച്ചത്' : 'Produced')
-                      : (language === 'ml' ? 'ഉൽപ്പാദന അളവ്' : 'Target Output')}
+                      : (language === 'ml' ? 'നിർമ്മാണ ശേഷം കാർഡിൽ തൂക്കുക' : 'Weigh on batch card after cooking')}
                   </p>
                 </div>
               </div>

@@ -573,37 +573,37 @@ export class DemoRepository implements IEpsoRepository {
       this.setItem(STORAGE_KEYS.MIXTURES, mixtures);
     }
 
-    // 2. Increment product stock
-    const effectiveActualQty =
-      params.actualQuantity > 0
-        ? params.actualQuantity
-        : params.plannedQuantity > 0
-        ? params.plannedQuantity
-        : 10;
-    const prevProdStock = product.currentStock;
-    product.currentStock += effectiveActualQty;
-    product.updatedAt = now;
+    // 2. Increment product stock ONLY if batch has already been weighed (positive actualQuantity)
+    const isUnweighed = !params.actualQuantity || params.actualQuantity <= 0;
+    const effectivePlannedQty = params.plannedQuantity > 0 ? params.plannedQuantity : 10;
+    const finalActualQty = isUnweighed ? 0 : params.actualQuantity;
 
-    movements.unshift({
-      id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      itemId: product.id,
-      itemType: 'product',
-      itemName: product.name,
-      movementType: 'production_output',
-      quantity: effectiveActualQty,
-      unit: params.unit,
-      previousBalance: prevProdStock,
-      newBalance: product.currentStock,
-      reference: `Run ${params.runNumber}`,
-      operatorName: params.operatorName,
-      reason: 'Finished production output',
-      createdAt: now,
-    });
+    if (!isUnweighed) {
+      const prevProdStock = product.currentStock;
+      product.currentStock += finalActualQty;
+      product.updatedAt = now;
+
+      movements.unshift({
+        id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        itemId: product.id,
+        itemType: 'product',
+        itemName: product.name,
+        movementType: 'production_output',
+        quantity: finalActualQty,
+        unit: params.unit,
+        previousBalance: prevProdStock,
+        newBalance: product.currentStock,
+        reference: `Run ${params.runNumber}`,
+        operatorName: params.operatorName,
+        reason: 'Finished production output',
+        createdAt: now,
+      });
+
+      await this.updateProduct(product.id, { currentStock: product.currentStock });
+    }
 
     // Save updated stocks and movements
     this.setItem(STORAGE_KEYS.INGREDIENTS, ingredients);
-
-    await this.updateProduct(product.id, { currentStock: product.currentStock });
     this.setItem(STORAGE_KEYS.MOVEMENTS, movements);
 
     // 3. Create run record
@@ -615,8 +615,8 @@ export class DemoRepository implements IEpsoRepository {
       recipeId: params.recipeId,
       recipeVersion: params.recipeVersion,
       productionDate: params.productionDate,
-      plannedQuantity: params.plannedQuantity > 0 ? params.plannedQuantity : effectiveActualQty,
-      actualQuantity: effectiveActualQty,
+      plannedQuantity: effectivePlannedQty,
+      actualQuantity: finalActualQty,
       unit: params.unit,
       status: 'completed',
       operatorName: params.operatorName,
