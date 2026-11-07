@@ -28,6 +28,7 @@ import {
   calculateDailyOilUsage,
   roundCurrency,
   roundStock,
+  isBasicIngredientName,
 } from './costing';
 import { dbCache } from './dbCache';
 
@@ -1503,25 +1504,39 @@ export class SupabaseRepository implements IEpsoRepository {
     if (filter?.type) query = query.eq('movement_type', filter.type);
     if (filter?.limit) query = query.limit(filter.limit);
 
-    const { data, error } = await query;
+    const [{ data, error }, { data: ings }] = await Promise.all([
+      query,
+      client.from('ingredients').select('id, name, unit, avg_cost_per_unit, category'),
+    ]);
     if (error) throw new Error(error.message);
 
-    return (data || []).map((m: any) => ({
-      id: m.id,
-      itemId: m.item_id || '',
-      itemType: m.item_type,
-      itemName: m.item_name || '',
-      movementType: m.movement_type,
-      quantity: Number(m.quantity),
-      unit: m.unit,
-      previousBalance: Number(m.previous_balance ?? m.stock_before) || 0,
-      newBalance: Number(m.new_balance ?? m.stock_after) || 0,
-      costPerUnit: Number(m.unit_cost ?? m.cost_per_unit) || undefined,
-      reference: m.reference || m.reference_id || '',
-      operatorName: m.operator_name || m.operator || '',
-      reason: m.reason || undefined,
-      createdAt: m.created_at,
-    }));
+    const ingMap = new Map((ings || []).map((i: any) => [i.id, i]));
+
+    return (data || []).map((m: any) => {
+      const ing = m.item_id ? ingMap.get(m.item_id) : undefined;
+      let itemName = ing?.name || m.item_name || '';
+      if (!itemName && m.reason) {
+        const match = m.reason.match(/\(([^)]+)\)/);
+        itemName = match ? match[1] : m.reason;
+      }
+
+      return {
+        id: m.id,
+        itemId: m.item_id || '',
+        itemType: m.item_type,
+        itemName,
+        movementType: m.movement_type,
+        quantity: Number(m.quantity),
+        unit: m.unit || ing?.unit || 'kg',
+        previousBalance: Number(m.previous_balance ?? m.stock_before) || 0,
+        newBalance: Number(m.new_balance ?? m.stock_after) || 0,
+        costPerUnit: Number(m.unit_cost ?? m.cost_per_unit) || (ing ? Number(ing.avg_cost_per_unit) : undefined),
+        reference: m.reference || m.reference_id || '',
+        operatorName: m.operator_name || m.operator || '',
+        reason: m.reason || undefined,
+        createdAt: m.created_at,
+      };
+    });
   }
 
   // ============================================================================
@@ -1844,18 +1859,18 @@ export class SupabaseRepository implements IEpsoRepository {
     const productionWages = params.productionWages || 0;
     const totalSharedExpense = roundCurrency(oilTotalExpense + productionWages);
 
-    // 6. Fetch completed production runs on that date
+    // 6. Fetch production runs produced on that date
     const { data: allRuns, error: runsErr } = await client
       .from('production_runs')
       .select('id, product_id, actual_quantity, total_ingredient_cost, products(name), start_time, created_at')
-      .eq('status', 'completed');
+      .neq('status', 'cancelled');
 
     if (runsErr) throw new Error(runsErr.message);
 
-    const runs = (allRuns || []).filter((r: any) =>
-      (r.start_time && r.start_time.startsWith(productionDate)) ||
-      (r.created_at && r.created_at.startsWith(productionDate))
-    );
+    const runs = (allRuns || []).filter((r: any) => {
+      const rDate = r.production_date || (r.start_time ? r.start_time.split('T')[0] : (r.created_at ? r.created_at.split('T')[0] : ''));
+      return rDate === productionDate && Number(r.actual_quantity || 0) > 0;
+    });
 
     const totalProductionKg = runs.reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
 
@@ -1927,20 +1942,48 @@ export class SupabaseRepository implements IEpsoRepository {
       productMap[pId].ingredientCost += ingCost;
     }
 
-    // Query basic ingredients adjustments recorded on this date (Salt, Cashew shell, Chippli, Curry leaves)
+    // Query basic ingredients adjustments recorded on this date (Salt, Cashew shell, Chippli, Curry leaves, Sugar)
     let dailyBasicIngredientsExpense = 0;
     try {
-      const { data: basicMovements } = await client
-        .from('stock_movements')
-        .select('quantity, unit_cost, reason')
-        .eq('item_type', 'ingredient')
-        .ilike('reason', `%${productionDate}%`);
+      const [{ data: basicMovements }, { data: allIngs }] = await Promise.all([
+        client
+          .from('stock_movements')
+          .select('item_id, quantity, unit, unit_cost, reason, created_at')
+          .eq('item_type', 'ingredient')
+          .eq('movement_type', 'production_consumption'),
+        client
+          .from('ingredients')
+          .select('id, name, category, avg_cost_per_unit'),
+      ]);
+
+      const ingMap = new Map((allIngs || []).map((i: any) => [i.id, i]));
 
       if (basicMovements && basicMovements.length > 0) {
         for (const m of basicMovements) {
-          const cost = Number(m.unit_cost) || 0;
-          const qty = Math.abs(Number(m.quantity) || 0);
-          dailyBasicIngredientsExpense += qty * cost;
+          const mDate = m.created_at ? m.created_at.split('T')[0] : '';
+          const reason = (m.reason || '').toLowerCase();
+          const matchesDate = mDate === productionDate || reason.includes(productionDate);
+          if (!matchesDate) continue;
+
+          // Exclude oil
+          const ing = m.item_id ? ingMap.get(m.item_id) : undefined;
+          const iName = (ing?.name || '').toLowerCase();
+          if (iName.includes('oil') || iName.includes('ഓയിൽ') || reason.includes('oil') || reason.includes('ഓയിൽ')) {
+            continue;
+          }
+
+          const isBasic =
+            ing?.category === 'basic' ||
+            isBasicIngredientName(iName) ||
+            isBasicIngredientName(reason) ||
+            reason.includes('daily basic ingredient usage') ||
+            reason.includes('basic');
+
+          if (!isBasic) continue;
+
+          const cost = Number(m.unit_cost) || Number(ing?.avg_cost_per_unit) || 0;
+          const qtyKg = m.unit?.toLowerCase() === 'g' ? Math.abs(Number(m.quantity) || 0) / 1000 : Math.abs(Number(m.quantity) || 0);
+          dailyBasicIngredientsExpense += qtyKg * cost;
         }
       }
     } catch (e) {
@@ -2387,10 +2430,16 @@ export class SupabaseRepository implements IEpsoRepository {
           .maybeSingle();
 
         if (packItem) {
+          const currStock = Number(packItem.current_stock) || 0;
+          if (stockDelta > 0 && currStock < stockDelta) {
+            throw new Error(
+              `${packetSize} സ്റ്റോക്കിലില്ല (ആകെ ലഭ്യമായ സ്റ്റോക്ക്: ${currStock} പാക്കറ്റുകൾ). കൂടുതൽ ചേർക്കാൻ കഴിയില്ല.`
+            );
+          }
+
           unitCost = Number(packItem.unit_cost ?? packItem.cost_per_unit) || unitCost;
           labourRate = Number(packItem.packing_labour_rate) || 1.0;
           sizeGrams = Number(packItem.size_grams) || 100;
-          const currStock = Number(packItem.current_stock) || 0;
           const newStock = Math.max(0, currStock - stockDelta);
 
           await client

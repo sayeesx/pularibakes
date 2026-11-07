@@ -146,18 +146,24 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
       }
 
       // Compute daily basic ingredients consumption cost by date
-      // Basic ingredients: ഉപ്പ്, അണ്ടി തോട്, ചിപ്പ്ളി പൊടി, കറിവേപ്പില
+      // Basic ingredients: ഉപ്പ്, അണ്ടി തോട്, ചിപ്പ്ളി പൊടി, കറിവേപ്പില, പഞ്ചസാര
       const basicCostByDate: Record<string, number> = {};
       for (const m of movements) {
         if ((m.quantity || 0) >= 0) continue;
         const itemName = (m.itemName || '').toLowerCase().trim();
         const reason = (m.reason || '').toLowerCase();
 
-        const isBasic = isBasicIngredientName(itemName) || reason.includes('daily basic ingredient usage');
+        const ing = m.itemId ? ingredients?.find((i) => i.id === m.itemId) : undefined;
+        const isBasic =
+          ing?.category === 'basic' ||
+          isBasicIngredientName(itemName) ||
+          isBasicIngredientName(reason) ||
+          reason.includes('daily basic ingredient usage') ||
+          reason.includes('basic');
         if (!isBasic) continue;
 
         // Exclude oil (oil is tracked separately via daily closings)
-        if (itemName.includes('ഓയിൽ') || itemName.includes('oil')) continue;
+        if (itemName.includes('ഓയിൽ') || itemName.includes('oil') || reason.includes('ഓയിൽ') || reason.includes('oil')) continue;
 
         const isConsumption =
           m.movementType === 'production_consumption' ||
@@ -171,7 +177,7 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
         const qtyKg = m.unit?.toLowerCase() === 'g' ? Math.abs(m.quantity) / 1000 : Math.abs(m.quantity);
         const unitCost = (m.costPerUnit && m.costPerUnit > 0)
           ? m.costPerUnit
-          : (ingCostMap.get(m.itemId) || ingCostMap.get(itemName) || 0);
+          : (ingCostMap.get(m.itemId) || ingCostMap.get(itemName) || (ing ? Number(ing.avgCostPerUnit) : 0));
         const cost = roundCurrency(qtyKg * unitCost);
 
         basicCostByDate[movDate] = roundCurrency((basicCostByDate[movDate] || 0) + cost);
@@ -280,7 +286,7 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
               oilCost += roundCurrency(dayOilCost * ratio);
             }
 
-            const dayBasicCost = basicCostByDate[rDate] || 0;
+            const dayBasicCost = basicCostByDate[rDate] || Number((closing as any)?.dailyBasicIngredientsExpense) || 0;
             if (dayBasicCost > 0) {
               basicIngredientsCost += roundCurrency(dayBasicCost * ratio);
             }

@@ -114,11 +114,9 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
           );
         });
 
-        const stock = matchingPack && matchingPack.currentStock !== undefined ? Number(matchingPack.currentStock) : undefined;
-        const isOutOfStock = Boolean(
-          matchingPack &&
-            ((stock !== undefined && stock <= 0) || matchingPack.isActive === false)
-        );
+        // If packaging item exists, use its current_stock (>= 0). If not tracked in inventory, stock is 0!
+        const stock = matchingPack ? Math.max(0, Number(matchingPack.currentStock || 0)) : 0;
+        const isOutOfStock = stock <= 0 || (matchingPack ? matchingPack.isActive === false : false);
 
         return {
           name: t.name,
@@ -135,12 +133,12 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
         DEFAULT_PACKET_SIZES.map((name) => ({
           name,
           costPerPacket: 0,
-          availableStock: undefined,
-          isOutOfStock: false,
+          availableStock: 0,
+          isOutOfStock: true,
         }))
       );
     });
-  }, [repo]);
+  }, [repo, isOpen]);
 
   // Load existing records for this batch
   useEffect(() => {
@@ -192,8 +190,8 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
       .map((name) => ({
         name,
         costPerPacket: 0,
-        availableStock: undefined,
-        isOutOfStock: false,
+        availableStock: 0,
+        isOutOfStock: true,
       }));
 
     return [...catalogPackets, ...existingMissing];
@@ -204,6 +202,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
     const currentSaved = quantities[pkt.name] || 0;
     const isOut = pkt.isOutOfStock || (pkt.availableStock !== undefined && pkt.availableStock <= 0);
 
+    // If out of stock and no previous quantity saved on this batch, STRICTLY BLOCK!
     if (isOut && currentSaved <= 0) {
       addToast(
         language === 'ml'
@@ -215,10 +214,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
     }
 
     // Maximum allowable is available warehouse stock + whatever was already allocated to this batch
-    const maxStock =
-      pkt.availableStock !== undefined
-        ? Math.max(0, pkt.availableStock + currentSaved)
-        : MAX_RULER_PACKETS;
+    const maxStock = Math.max(0, (pkt.availableStock ?? 0) + currentSaved);
 
     if (maxStock <= 0 && currentSaved <= 0) {
       addToast(

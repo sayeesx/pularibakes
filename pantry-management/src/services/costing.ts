@@ -24,6 +24,36 @@ export function roundCurrency(value: number): number {
 }
 
 /**
+ * Checks if an ingredient name matches any of the basic ingredients:
+ * - ഉപ്പ് (Salt)
+ * - ഓയിൽ (Oil)
+ * - പഞ്ചസാര (Sugar)
+ * - അണ്ടി തോട് (Cashew Shell Fuel)
+ * - ചിപ്പ്ളി പൊടി (Chippli Powder)
+ * - കറിവേപ്പില (Curry Leaves)
+ */
+export function isBasicIngredientName(name: string): boolean {
+  if (!name) return false;
+  const n = name.toLowerCase().trim();
+  return (
+    n.includes('ഉപ്പ്') ||
+    n.includes('salt') ||
+    n.includes('ഓയിൽ') ||
+    n.includes('oil') ||
+    n.includes('പഞ്ചസാര') ||
+    n.includes('sugar') ||
+    n.includes('അണ്ടി തോട്') ||
+    n.includes('cashew shell') ||
+    n.includes('തോട്') ||
+    n.includes('fuel') ||
+    n.includes('ചിപ്പ്ളി') ||
+    n.includes('chippli') ||
+    n.includes('കറിവേപ്പില') ||
+    n.includes('curry')
+  );
+}
+
+/**
  * Scales a recipe proportionally based on planned output quantity.
  * Example: Base output 10kg with 15kg raw bananas -> Planned 50kg = 5x multiplier -> 75kg raw bananas.
  */

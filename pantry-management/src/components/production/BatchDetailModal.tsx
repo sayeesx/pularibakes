@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { ProductionRun, PackingRecord, DailyClosing, Recipe } from '../../types';
+import { ProductionRun, PackingRecord, DailyClosing, Recipe, StockMovement, Ingredient } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
+import { isBasicIngredientName } from '../../services/costing';
 import {
   TbPackage,
   TbToolsKitchen2,
@@ -27,6 +28,8 @@ interface BatchDetailModalProps {
   dailyClosing?: DailyClosing | null;
   totalDailyProductionKg?: number;
   recipe?: Recipe | null;
+  stockMovements?: StockMovement[];
+  ingredients?: Ingredient[];
 }
 
 export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
@@ -38,6 +41,8 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
   dailyClosing,
   totalDailyProductionKg = 0,
   recipe,
+  stockMovements = [],
+  ingredients = [],
 }) => {
   const { language } = useLanguage();
 
@@ -84,23 +89,97 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
 
   // Basic ingredients calculations
   const calculatedBasics = useMemo(() => {
-    if (!dailyClosing) return null;
+    const batchWeightKg = Number(batch?.actualQuantity) || Number(batch?.plannedQuantity) || 0;
+    const effectiveTotalDayKg = Math.max(batchWeightKg, Number(totalDailyProductionKg) || 0);
+    const batchRatio = effectiveTotalDayKg > 0 ? Math.min(1, batchWeightKg / effectiveTotalDayKg) : 1;
+    const batchDate = batch?.productionDate || (batch?.createdAt ? batch.createdAt.split('T')[0] : '');
 
-    const oilUsed = Number(dailyClosing.totalOilUsedKg ?? dailyClosing.oilConsumed) || 0;
-    const saltUsed = Number(dailyClosing.saltUsedKg) || 0;
-    const sugarUsed = Number((dailyClosing as any).sugarUsedKg) || 0;
+    // 1. Oil
+    let oilDailyTotal = Number(dailyClosing?.totalOilUsedKg ?? dailyClosing?.oilConsumed) || 0;
+
+    // 2. Aggregate all basic ingredients from stock movements on this date
+    // (Salt, Cashew shell fuel, Chippli, Curry leaves, Sugar, etc.)
+    const itemsMap = new Map<string, {
+      name: string;
+      categoryKey: string;
+      dailyTotalKg: number;
+      batchShareKg: number;
+      unit: string;
+    }>();
+
+    if (stockMovements && stockMovements.length > 0) {
+      for (const m of stockMovements) {
+        if ((m.quantity || 0) >= 0) continue;
+        const mDate = m.createdAt ? m.createdAt.split('T')[0] : '';
+        const r = (m.reason || '').toLowerCase();
+        const n = (m.itemName || '').toLowerCase();
+
+        const matchesDate = mDate === batchDate || r.includes(batchDate);
+        if (!matchesDate) continue;
+
+        const isOil = n.includes('ഓയിൽ') || n.includes('oil') || r.includes('ഓയിൽ') || r.includes('oil');
+        if (isOil) {
+          if (oilDailyTotal <= 0) {
+            oilDailyTotal = Math.abs(Number(m.quantity) || 0);
+          }
+          continue;
+        }
+
+        const ing = ingredients?.find((i) => i.id === m.itemId);
+        const isBasic =
+          ing?.category === 'basic' ||
+          isBasicIngredientName(m.itemName) ||
+          isBasicIngredientName(m.reason || '') ||
+          r.includes('daily basic ingredient usage') ||
+          r.includes('basic');
+
+        if (!isBasic) continue;
+
+        const displayName = ing?.name || m.itemName || (m.reason?.match(/\(([^)]+)\)/)?.[1]) || 'Basic Ingredient';
+        const qtyKg = m.unit?.toLowerCase() === 'g' ? Math.abs(m.quantity) / 1000 : Math.abs(m.quantity);
+
+        const existing = itemsMap.get(displayName) || {
+          name: displayName,
+          categoryKey: n.includes('salt') || n.includes('ഉപ്പ്') || r.includes('ഉപ്പ്') ? 'salt' : n.includes('sugar') || n.includes('പഞ്ചസാര') || r.includes('പഞ്ചസാര') ? 'sugar' : 'other',
+          dailyTotalKg: 0,
+          batchShareKg: 0,
+          unit: 'kg',
+        };
+
+        existing.dailyTotalKg += qtyKg;
+        itemsMap.set(displayName, existing);
+      }
+    }
+
+    // Also check dailyClosing salt/sugar fields if they were recorded in closing notes
+    const saltFromClosing = Number(dailyClosing?.saltUsedKg) || 0;
+    if (saltFromClosing > 0 && !Array.from(itemsMap.keys()).some(k => k.includes('ഉപ്പ്') || k.toLowerCase().includes('salt'))) {
+      itemsMap.set('ഉപ്പ് (Salt)', {
+        name: 'ഉപ്പ് (Salt)',
+        categoryKey: 'salt',
+        dailyTotalKg: saltFromClosing,
+        batchShareKg: 0,
+        unit: 'kg',
+      });
+    }
+
+    const basicItems = Array.from(itemsMap.values()).map((item) => ({
+      ...item,
+      dailyTotalKg: Number(item.dailyTotalKg.toFixed(2)),
+      batchShareKg: Number((item.dailyTotalKg * batchRatio).toFixed(2)),
+    }));
+
+    const oilShareKg = Number((oilDailyTotal * batchRatio).toFixed(2));
+    const hasRecordedAny = oilDailyTotal > 0 || basicItems.length > 0;
 
     return {
       ratioPercent: (batchRatio * 100).toFixed(1),
-      oilKg: (oilUsed * batchRatio).toFixed(2),
-      oilDailyTotal: oilUsed.toFixed(2),
-      saltKg: (saltUsed * batchRatio).toFixed(2),
-      saltDailyTotal: saltUsed.toFixed(2),
-      sugarKg: (sugarUsed * batchRatio).toFixed(2),
-      sugarDailyTotal: sugarUsed.toFixed(2),
-      hasRecordedAny: oilUsed > 0 || saltUsed > 0 || sugarUsed > 0,
+      oilDailyTotal: oilDailyTotal.toFixed(2),
+      oilShareKg: oilShareKg.toFixed(2),
+      basicItems,
+      hasRecordedAny,
     };
-  }, [dailyClosing, batchRatio]);
+  }, [batch, totalDailyProductionKg, dailyClosing, stockMovements, ingredients]);
 
   // Ingredients consumed list (with fallback to recipe if empty)
   const consumedIngredientsList = useMemo(() => {
@@ -342,65 +421,74 @@ export const BatchDetailModal: React.FC<BatchDetailModalProps> = ({
           <div className="p-3.5 rounded-2xl border border-stone-200 dark:border-[#282323] bg-stone-50 dark:bg-[#141212] space-y-2.5">
             {calculatedBasics && calculatedBasics.hasRecordedAny ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                {/* 1. Oil */}
-                <div className="p-2.5 rounded-xl bg-white dark:bg-[#1E1B1B] border border-stone-200/80 dark:border-[#282323] flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
-                      <TbDroplet className="w-4 h-4 stroke-[2.2]" />
-                    </span>
-                    <div>
-                      <span className="font-bold text-stone-900 dark:text-white font-malayalam block leading-none">
-                        {language === 'ml' ? 'ഓയിൽ' : 'Daily Oil'}
+                {/* 1. Oil (if recorded) */}
+                {Number(calculatedBasics.oilDailyTotal) > 0 && (
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#1E1B1B] border border-stone-200/80 dark:border-[#282323] flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1.5 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                        <TbDroplet className="w-4 h-4 stroke-[2.2]" />
                       </span>
-                      <span className="text-[10px] text-stone-400 font-mono">
-                        {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {calculatedBasics.oilDailyTotal} kg
-                      </span>
+                      <div>
+                        <span className="font-bold text-stone-900 dark:text-white font-malayalam block leading-none">
+                          {language === 'ml' ? 'ഓയിൽ' : 'Daily Oil'}
+                        </span>
+                        <span className="text-[10px] text-stone-400 font-mono">
+                          {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {calculatedBasics.oilDailyTotal} kg
+                        </span>
+                      </div>
                     </div>
+                    <span className="font-black text-amber-600 dark:text-amber-400 font-mono text-sm">
+                      {calculatedBasics.oilShareKg} kg
+                    </span>
                   </div>
-                  <span className="font-black text-amber-600 dark:text-amber-400 font-mono text-sm">
-                    {calculatedBasics.oilKg} kg
-                  </span>
-                </div>
+                )}
 
-                {/* 2. Salt */}
-                <div className="p-2.5 rounded-xl bg-white dark:bg-[#1E1B1B] border border-stone-200/80 dark:border-[#282323] flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-400">
-                      <TbSparkles className="w-4 h-4 stroke-[2.2]" />
-                    </span>
-                    <div>
-                      <span className="font-bold text-stone-900 dark:text-white font-malayalam block leading-none">
-                        {language === 'ml' ? 'ഉപ്പ്' : 'Salt'}
-                      </span>
-                      <span className="text-[10px] text-stone-400 font-mono">
-                        {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {calculatedBasics.saltDailyTotal} kg
-                      </span>
-                    </div>
-                  </div>
-                  <span className="font-black text-blue-600 dark:text-blue-400 font-mono text-sm">
-                    {calculatedBasics.saltKg} kg
-                  </span>
-                </div>
+                {/* 2. All Recorded Daily Basic Ingredients (Salt, Sugar, Fuel, Chippli, Curry leaves, etc.) */}
+                {calculatedBasics.basicItems.map((item) => {
+                  const isSalt = item.categoryKey === 'salt' || item.name.toLowerCase().includes('salt') || item.name.includes('ഉപ്പ്');
+                  const isSugar = item.categoryKey === 'sugar' || item.name.toLowerCase().includes('sugar') || item.name.includes('പഞ്ചസാര');
+                  const isFuel = item.name.includes('തോട്') || item.name.toLowerCase().includes('fuel') || item.name.toLowerCase().includes('shell');
 
-                {/* 3. Sugar */}
-                <div className="p-2.5 rounded-xl bg-white dark:bg-[#1E1B1B] border border-stone-200/80 dark:border-[#282323] flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-pink-500/15 text-pink-600 dark:text-pink-400">
-                      <TbCandy className="w-4 h-4 stroke-[2.2]" />
-                    </span>
-                    <div>
-                      <span className="font-bold text-stone-900 dark:text-white font-malayalam block leading-none">
-                        {language === 'ml' ? 'പഞ്ചസാര' : 'Sugar'}
-                      </span>
-                      <span className="text-[10px] text-stone-400 font-mono">
-                        {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {calculatedBasics.sugarDailyTotal} kg
+                  const IconComp = isSalt ? TbSparkles : isSugar ? TbCandy : isFuel ? TbFlame : TbToolsKitchen2;
+                  const colorClass = isSalt
+                    ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                    : isSugar
+                    ? 'bg-pink-500/15 text-pink-600 dark:text-pink-400'
+                    : isFuel
+                    ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400'
+                    : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400';
+                  const textClass = isSalt
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : isSugar
+                    ? 'text-pink-600 dark:text-pink-400'
+                    : isFuel
+                    ? 'text-orange-600 dark:text-orange-400'
+                    : 'text-emerald-600 dark:text-emerald-400';
+
+                  return (
+                    <div
+                      key={item.name}
+                      className="p-2.5 rounded-xl bg-white dark:bg-[#1E1B1B] border border-stone-200/80 dark:border-[#282323] flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`p-1.5 rounded-lg ${colorClass}`}>
+                          <IconComp className="w-4 h-4 stroke-[2.2]" />
+                        </span>
+                        <div>
+                          <span className="font-bold text-stone-900 dark:text-white font-malayalam block leading-none">
+                            {item.name}
+                          </span>
+                          <span className="text-[10px] text-stone-400 font-mono">
+                            {language === 'ml' ? 'ദിവസേന ആകെ:' : 'Day Total:'} {item.dailyTotalKg} {item.unit}
+                          </span>
+                        </div>
+                      </div>
+                      <span className={`font-black font-mono text-sm ${textClass}`}>
+                        {item.batchShareKg} {item.unit}
                       </span>
                     </div>
-                  </div>
-                  <span className="font-black text-pink-600 dark:text-pink-400 font-mono text-sm">
-                    {calculatedBasics.sugarKg} kg
-                  </span>
-                </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-2 text-stone-400 italic">

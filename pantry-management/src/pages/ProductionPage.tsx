@@ -15,7 +15,7 @@ import { BasicIngredientsSelectorModal } from '../components/production/BasicIng
 import { BasicIngredientMeasurementModal } from '../components/production/BasicIngredientMeasurementModal';
 import { BatchDetailModal } from '../components/production/BatchDetailModal';
 import { Modal } from '../components/ui/Modal';
-import { Product, Recipe, Ingredient, ProductionRun, PackingRecord, DailyClosing } from '../types';
+import { Product, Recipe, Ingredient, ProductionRun, PackingRecord, DailyClosing, StockMovement } from '../types';
 import {
   TbSearch,
   TbPlus,
@@ -90,6 +90,7 @@ export const ProductionPage: React.FC = () => {
   const [todayOilClosing, setTodayOilClosing] = useState<DailyClosing | null>(null);
   const [yesterdayOilClosing, setYesterdayOilClosing] = useState<DailyClosing | null>(null);
   const [packingRecords, setPackingRecords] = useState<PackingRecord[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Timezone-safe local date calculation
@@ -222,6 +223,7 @@ export const ProductionPage: React.FC = () => {
           setTodayOilClosing(oilCloseToday);
           setYesterdayOilClosing(oilCloseYesterday);
           setPackingRecords(packList || []);
+          setStockMovements(movements || []);
 
           if (movements && movements.length > 0) {
             const detectedToday: string[] = [];
@@ -239,9 +241,9 @@ export const ProductionPage: React.FC = () => {
               const n = (m.itemName || '').toLowerCase();
 
               let key = '';
-              if (n.includes('ഓയിൽ') || n.includes('oil')) key = 'oil';
-              else if (n.includes('ഉപ്പ്') || n.includes('salt')) key = 'salt';
-              else if (n.includes('പഞ്ചസാര') || n.includes('sugar')) key = 'sugar';
+              if (n.includes('ഓയിൽ') || n.includes('oil') || r.includes('ഓയിൽ') || r.includes('oil')) key = 'oil';
+              else if (n.includes('ഉപ്പ്') || n.includes('salt') || r.includes('ഉപ്പ്') || r.includes('salt')) key = 'salt';
+              else if (n.includes('പഞ്ചസാര') || n.includes('sugar') || r.includes('പഞ്ചസാര') || r.includes('sugar')) key = 'sugar';
 
               if (key) {
                 if (mDate === todayStr || mLocalDate === todayStr || r.includes(todayStr) || isTodayDate(mDate)) {
@@ -1528,6 +1530,8 @@ export const ProductionPage: React.FC = () => {
             r.id === selectedBatchForDetail?.recipeId ||
             r.productId === selectedBatchForDetail?.productId
         )}
+        stockMovements={stockMovements}
+        ingredients={ingredients}
       />
     </div>
   );

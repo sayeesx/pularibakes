@@ -25,6 +25,7 @@ import {
   calculateDailyOilUsage,
   roundCurrency,
   roundStock,
+  isBasicIngredientName,
 } from './costing';
 import { dbCache } from './dbCache';
 
@@ -935,29 +936,45 @@ export async function fetchProductionRuns(force = false): Promise<ProductionRun[
 
 export async function fetchStockMovements(force = false): Promise<StockMovement[]> {
   return dbCache.wrap('admin_stock_movements', async () => {
-    const { data, error } = await supabase
-      .from('stock_movements')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(1000);
+    const [{ data, error }, { data: ings }] = await Promise.all([
+      supabase
+        .from('stock_movements')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000),
+      supabase
+        .from('ingredients')
+        .select('id, name, category, unit, avg_cost_per_unit'),
+    ]);
 
     if (error) throw error;
-    return (data || []).map((row) => ({
-      id: row.id,
-      itemId: row.item_id || '',
-      itemType: (row.item_type || 'ingredient') as any,
-      itemName: row.reason || '',
-      movementType: (row.movement_type || 'adjustment') as any,
-      quantity: Number(row.quantity) || 0,
-      unit: row.unit || 'kg',
-      previousBalance: Number(row.stock_before ?? row.previous_balance) || 0,
-      newBalance: Number(row.stock_after ?? row.new_balance) || 0,
-      costPerUnit: Number(row.unit_cost ?? row.cost_per_unit) || undefined,
-      reference: row.reference_id || '',
-      operatorName: row.operator || row.operator_name || 'Staff',
-      reason: row.reason || '',
-      createdAt: row.created_at,
-    }));
+    const ingMap = new Map((ings || []).map((i: any) => [i.id, i]));
+
+    return (data || []).map((row) => {
+      const ing = row.item_id ? ingMap.get(row.item_id) : undefined;
+      let itemName = ing?.name || '';
+      if (!itemName && row.reason) {
+        const match = row.reason.match(/\(([^)]+)\)/);
+        itemName = match ? match[1] : row.reason;
+      }
+
+      return {
+        id: row.id,
+        itemId: row.item_id || '',
+        itemType: (row.item_type || 'ingredient') as any,
+        itemName,
+        movementType: (row.movement_type || 'adjustment') as any,
+        quantity: Number(row.quantity) || 0,
+        unit: row.unit || ing?.unit || 'kg',
+        previousBalance: Number(row.stock_before ?? row.previous_balance) || 0,
+        newBalance: Number(row.stock_after ?? row.new_balance) || 0,
+        costPerUnit: Number(row.unit_cost ?? row.cost_per_unit) || (ing ? Number(ing.avg_cost_per_unit) : undefined),
+        reference: row.reference_id || '',
+        operatorName: row.operator || row.operator_name || 'Staff',
+        reason: row.reason || '',
+        createdAt: row.created_at,
+      };
+    });
   }, { ttl: dbCache.TTL.STOCK_MOVEMENTS, force });
 }
 
@@ -1362,7 +1379,7 @@ export async function saveDailyClosing(params: {
   const productionWages = params.productionWages || 0;
   const totalSharedExpense = roundCurrency(oilTotalExpense + productionWages);
 
-  // 6. Fetch completed production runs on that date
+  // 6. Fetch production runs produced on that date
   const { data: allRuns, error: runsErr } = await supabase
     .from('production_runs')
     .select(`
@@ -1374,14 +1391,14 @@ export async function saveDailyClosing(params: {
       start_time,
       created_at
     `)
-    .eq('status', 'completed');
+    .neq('status', 'cancelled');
 
   if (runsErr) throw runsErr;
 
-  const runs = (allRuns || []).filter((r: any) =>
-    (r.start_time && r.start_time.startsWith(productionDate)) ||
-    (r.created_at && r.created_at.startsWith(productionDate))
-  );
+  const runs = (allRuns || []).filter((r: any) => {
+    const rDate = r.production_date || (r.start_time ? r.start_time.split('T')[0] : (r.created_at ? r.created_at.split('T')[0] : ''));
+    return rDate === productionDate && Number(r.actual_quantity || 0) > 0;
+  });
 
   const totalProductionKg = runs.reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
 
@@ -1455,17 +1472,45 @@ export async function saveDailyClosing(params: {
 
   let dailyBasicIngredientsExpense = 0;
   try {
-    const { data: basicMovements } = await supabase
-      .from('stock_movements')
-      .select('quantity, unit_cost, reason')
-      .eq('item_type', 'ingredient')
-      .ilike('reason', `%${productionDate}%`);
+    const [{ data: basicMovements }, { data: allIngs }] = await Promise.all([
+      supabase
+        .from('stock_movements')
+        .select('item_id, quantity, unit, unit_cost, reason, created_at')
+        .eq('item_type', 'ingredient')
+        .eq('movement_type', 'production_consumption'),
+      supabase
+        .from('ingredients')
+        .select('id, name, category, avg_cost_per_unit'),
+    ]);
+
+    const ingMap = new Map((allIngs || []).map((i: any) => [i.id, i]));
 
     if (basicMovements && basicMovements.length > 0) {
       for (const m of basicMovements) {
-        const cost = Number(m.unit_cost) || 0;
-        const qty = Math.abs(Number(m.quantity) || 0);
-        dailyBasicIngredientsExpense += qty * cost;
+        const mDate = m.created_at ? m.created_at.split('T')[0] : '';
+        const reason = (m.reason || '').toLowerCase();
+        const matchesDate = mDate === productionDate || reason.includes(productionDate);
+        if (!matchesDate) continue;
+
+        // Exclude oil
+        const ing = m.item_id ? ingMap.get(m.item_id) : undefined;
+        const iName = (ing?.name || '').toLowerCase();
+        if (iName.includes('oil') || iName.includes('ഓയിൽ') || reason.includes('oil') || reason.includes('ഓയിൽ')) {
+          continue;
+        }
+
+        const isBasic =
+          ing?.category === 'basic' ||
+          isBasicIngredientName(iName) ||
+          isBasicIngredientName(reason) ||
+          reason.includes('daily basic ingredient usage') ||
+          reason.includes('basic');
+
+        if (!isBasic) continue;
+
+        const cost = Number(m.unit_cost) || Number(ing?.avg_cost_per_unit) || 0;
+        const qtyKg = m.unit?.toLowerCase() === 'g' ? Math.abs(Number(m.quantity) || 0) / 1000 : Math.abs(Number(m.quantity) || 0);
+        dailyBasicIngredientsExpense += qtyKg * cost;
       }
     }
   } catch (e) {

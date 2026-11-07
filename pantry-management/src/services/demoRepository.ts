@@ -1438,8 +1438,17 @@ export class DemoRepository implements IEpsoRepository {
     // Adjust packaging stock in demo storage
     const packItems = await this.listPackagingItems();
     const packIdx = packItems.findIndex((p) => p.sizeLabel.toLowerCase() === params.packetSize.toLowerCase());
-    if (packIdx >= 0) {
-      packItems[packIdx].currentStock = Math.max(0, packItems[packIdx].currentStock - params.packetsPacked);
+    const prevPacked = existingIdx >= 0 ? Number(records[existingIdx].packetsPacked || 0) : 0;
+    const delta = params.packetsPacked - prevPacked;
+
+    if (packIdx >= 0 && delta > 0 && packItems[packIdx].currentStock < delta) {
+      throw new Error(
+        `${params.packetSize} സ്റ്റോക്കിലില്ല (ലഭ്യമായ സ്റ്റോക്ക്: ${packItems[packIdx].currentStock}). കൂടുതൽ ചേർക്കാൻ കഴിയില്ല.`
+      );
+    }
+
+    if (packIdx >= 0 && delta !== 0) {
+      packItems[packIdx].currentStock = Math.max(0, packItems[packIdx].currentStock - delta);
       this.setItem('pb_packaging_items', packItems);
     }
 
