@@ -7,8 +7,8 @@ const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 // Detect target application:
 // 1. Explicit environment variable: APP_TARGET=admin or APP_TARGET=pantry-management
 // 2. Vercel project name: contains "admin" -> admin, else -> pantry-management
-const envTarget = process.env.APP_TARGET || process.env.VITE_APP || '';
-const vercelProject = process.env.VERCEL_PROJECT_NAME || '';
+const envTarget = (process.env.APP_TARGET || process.env.VITE_APP || '').trim();
+const vercelProject = (process.env.VERCEL_PROJECT_NAME || '').trim();
 
 let targetApp = 'pantry-management';
 

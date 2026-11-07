@@ -1856,7 +1856,7 @@ export class SupabaseRepository implements IEpsoRepository {
     const totalProductionKg = runs.reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
 
     // Metadata preserving exact cook inputs
-    const metaPayload = {
+    const metaPayload: Record<string, any> = {
       oilOpeningBalance: previousAvailableStock,
       oilPurchases,
       oilClosingBalance: finalOilStock,
@@ -1950,27 +1950,31 @@ export class SupabaseRepository implements IEpsoRepository {
       dailyBasicIngredientsExpense
     );
 
-    await client.from('daily_cost_allocations').delete().eq('closing_id', closingId);
-
-    if (allocations.length > 0) {
-      const allocationsPayload = allocations.map((a) => ({
-        closing_id: closingId,
-        production_date: productionDate,
-        product_id: a.productId,
-        product_name: a.productName,
-        total_production_kg: a.totalProductionKg,
-        batch_count: a.batchCount,
-        ingredient_cost: a.ingredientCost,
-        allocated_oil_cost: a.allocatedOilCost,
-        allocated_production_wages: a.allocatedProductionWages,
-        total_production_cost: a.totalProductionCost,
-        production_cost_per_kg: a.productionCostPerKg,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
-
-      await client.from('daily_cost_allocations').insert(allocationsPayload);
+    try {
+      metaPayload.allocations = allocations;
+      await client.from('daily_closings').update({ notes: JSON.stringify(metaPayload) }).eq('id', closingId);
+    } catch (mErr) {
+      console.warn('Could not update closing notes with allocations:', mErr);
     }
+
+    await client.from('daily_cost_allocations').delete().eq('allocation_date', productionDate);
+
+    const totalWageCost = productionWages;
+    const totalProdKg = totalProductionKg || 1;
+    const wagePerKg = roundCurrency(totalWageCost / Math.max(1, totalProdKg));
+    const matPerKg = roundCurrency(dailyBasicIngredientsExpense / Math.max(1, totalProdKg));
+    const overheadPerKg = roundCurrency((oilTotalExpense + totalWageCost) / Math.max(1, totalProdKg));
+
+    await client.from('daily_cost_allocations').insert({
+      allocation_date: productionDate,
+      total_daily_wages: totalWageCost,
+      total_basic_materials_cost: dailyBasicIngredientsExpense,
+      total_production_weight_kg: totalProductionKg,
+      wage_cost_per_kg: wagePerKg,
+      basic_material_cost_per_kg: matPerKg,
+      total_overhead_cost_per_kg: overheadPerKg,
+      created_at: new Date().toISOString(),
+    });
 
     // 7. Update common oil inventory in ingredients table to final calculated stock
     if (oilIng) {
@@ -2035,29 +2039,51 @@ export class SupabaseRepository implements IEpsoRepository {
   async listCostAllocations(dateOrClosingId: string): Promise<DailyCostAllocation[]> {
     const client = this.checkClient();
     const isDate = dateOrClosingId.includes('-');
-    let query = client.from('daily_cost_allocations').select('*');
-    if (isDate) {
-      query = query.eq('production_date', dateOrClosingId);
-    } else {
-      query = query.eq('closing_id', dateOrClosingId);
+    const targetDate = isDate ? dateOrClosingId : '';
+
+    // 1. Try retrieving product-wise allocations from daily_closings notes metadata
+    if (targetDate) {
+      try {
+        const { data: closing } = await client
+          .from('daily_closings')
+          .select('notes')
+          .eq('closing_date', targetDate)
+          .maybeSingle();
+
+        if (closing?.notes) {
+          const meta = JSON.parse(closing.notes);
+          if (Array.isArray(meta.allocations) && meta.allocations.length > 0) {
+            return meta.allocations;
+          }
+        }
+      } catch {}
     }
 
-    const { data, error } = await query.order('total_production_kg', { ascending: false });
-    if (error) throw new Error(error.message);
+    // 2. Fallback to daily_cost_allocations summary table
+    let query = client.from('daily_cost_allocations').select('*');
+    if (targetDate) {
+      query = query.eq('allocation_date', targetDate);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Could not query daily_cost_allocations:', error);
+      return [];
+    }
 
     return (data || []).map((row: any) => ({
       id: row.id,
-      closingId: row.closing_id,
-      productionDate: row.production_date,
-      productId: row.product_id,
-      productName: row.product_name,
-      totalProductionKg: Number(row.total_production_kg) || 0,
-      batchCount: Number(row.batch_count) || 1,
-      ingredientCost: Number(row.ingredient_cost) || 0,
-      allocatedOilCost: Number(row.allocated_oil_cost) || 0,
-      allocatedProductionWages: Number(row.allocated_production_wages) || 0,
-      totalProductionCost: Number(row.total_production_cost) || 0,
-      productionCostPerKg: Number(row.production_cost_per_kg) || 0,
+      closingId: dateOrClosingId,
+      productionDate: row.allocation_date,
+      productId: '',
+      productName: 'General Production',
+      totalProductionKg: Number(row.total_production_weight_kg) || 0,
+      batchCount: 1,
+      ingredientCost: Number(row.total_basic_materials_cost) || 0,
+      allocatedOilCost: 0,
+      allocatedProductionWages: Number(row.total_daily_wages) || 0,
+      totalProductionCost: Number(row.total_basic_materials_cost) + Number(row.total_daily_wages),
+      productionCostPerKg: Number(row.wage_cost_per_kg) + Number(row.basic_material_cost_per_kg),
       createdAt: row.created_at,
     }));
   }

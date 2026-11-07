@@ -1139,7 +1139,33 @@ export async function fetchSales(): Promise<any[]> {
     console.error('Error fetching sales:', error);
     return [];
   }
-  return data || [];
+
+  return (data || []).map((row: any) => {
+    let meta: any = {};
+    let cleanNotes = row.notes;
+    if (row.notes && typeof row.notes === 'string' && row.notes.startsWith('{') && row.notes.endsWith('}')) {
+      try {
+        meta = JSON.parse(row.notes);
+        cleanNotes = meta.notes || '';
+      } catch {}
+    }
+    return {
+      id: row.id,
+      sale_date: row.sale_date,
+      customer_name: row.customer_name,
+      sale_type: row.sale_type,
+      total_amount: Number(row.total_amount) || 0,
+      payment_status: row.payment_status || 'paid',
+      payment_method: meta.payment_method || row.payment_method || 'cash',
+      product_id: meta.product_id || row.product_id,
+      product_name: meta.product_name || row.product_name || 'Snack',
+      quantity: meta.quantity !== undefined ? Number(meta.quantity) : (row.quantity !== undefined ? Number(row.quantity) : 1),
+      unit: meta.unit || row.unit || 'kg',
+      unit_price: meta.unit_price !== undefined ? Number(meta.unit_price) : (row.unit_price !== undefined ? Number(row.unit_price) : 0),
+      notes: cleanNotes,
+      created_at: row.created_at,
+    };
+  });
 }
 
 export async function recordSale(sale: {
@@ -1155,9 +1181,26 @@ export async function recordSale(sale: {
   payment_status?: string;
   notes?: string;
 }): Promise<any> {
+  const dbPayload = {
+    sale_date: sale.sale_date,
+    customer_name: sale.customer_name || 'Counter Sale',
+    sale_type: 'wholesale',
+    total_amount: Number(sale.total_amount) || 0,
+    payment_status: sale.payment_status || 'paid',
+    notes: JSON.stringify({
+      product_id: sale.product_id,
+      product_name: sale.product_name,
+      quantity: sale.quantity,
+      unit: sale.unit,
+      unit_price: sale.unit_price,
+      payment_method: sale.payment_method || 'cash',
+      notes: sale.notes,
+    }),
+  };
+
   const { data, error } = await supabase
     .from('sales')
-    .insert([sale])
+    .insert([dbPayload])
     .select()
     .single();
 
@@ -1165,7 +1208,15 @@ export async function recordSale(sale: {
     console.error('Error recording sale:', error);
     throw error;
   }
-  return data;
+  return {
+    ...data,
+    product_id: sale.product_id,
+    product_name: sale.product_name,
+    quantity: sale.quantity,
+    unit: sale.unit,
+    unit_price: sale.unit_price,
+    payment_method: sale.payment_method || 'cash',
+  };
 }
 
 export async function recordSalesBatch(sales: Array<{
@@ -1182,16 +1233,46 @@ export async function recordSalesBatch(sales: Array<{
   notes?: string;
 }>): Promise<any[]> {
   if (!sales || sales.length === 0) return [];
+
+  const dbPayloads = sales.map((sale) => ({
+    sale_date: sale.sale_date,
+    customer_name: sale.customer_name || 'Counter Sale',
+    sale_type: 'wholesale',
+    total_amount: Number(sale.total_amount) || 0,
+    payment_status: sale.payment_status || 'paid',
+    notes: JSON.stringify({
+      product_id: sale.product_id,
+      product_name: sale.product_name,
+      quantity: sale.quantity,
+      unit: sale.unit,
+      unit_price: sale.unit_price,
+      payment_method: sale.payment_method || 'cash',
+      notes: sale.notes,
+    }),
+  }));
+
   const { data, error } = await supabase
     .from('sales')
-    .insert(sales)
+    .insert(dbPayloads)
     .select();
 
   if (error) {
     console.error('Error recording sales batch:', error);
     throw error;
   }
-  return data || [];
+
+  return (data || []).map((row: any, idx: number) => {
+    const original = sales[idx] || {};
+    return {
+      ...row,
+      product_id: original.product_id,
+      product_name: original.product_name,
+      quantity: original.quantity,
+      unit: original.unit,
+      unit_price: original.unit_price,
+      payment_method: original.payment_method || 'cash',
+    };
+  });
 }
 
 export async function deleteSale(id: string): Promise<void> {
@@ -1305,7 +1386,7 @@ export async function saveDailyClosing(params: {
   const totalProductionKg = runs.reduce((sum: number, r: any) => sum + (Number(r.actual_quantity) || 0), 0);
 
   // Metadata preserving exact cook inputs
-  const metaPayload = {
+  const metaPayload: Record<string, any> = {
     oilOpeningBalance: previousAvailableStock,
     oilPurchases,
     oilClosingBalance: finalOilStock,
@@ -1398,27 +1479,31 @@ export async function saveDailyClosing(params: {
     dailyBasicIngredientsExpense
   );
 
-  await supabase.from('daily_cost_allocations').delete().eq('closing_id', closingId);
-
-  if (allocations.length > 0) {
-    const allocationsPayload = allocations.map((a) => ({
-      closing_id: closingId,
-      production_date: productionDate,
-      product_id: a.productId,
-      product_name: a.productName,
-      total_production_kg: a.totalProductionKg,
-      batch_count: a.batchCount,
-      ingredient_cost: a.ingredientCost,
-      allocated_oil_cost: a.allocatedOilCost,
-      allocated_production_wages: a.allocatedProductionWages,
-      total_production_cost: a.totalProductionCost,
-      production_cost_per_kg: a.productionCostPerKg,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }));
-
-    await supabase.from('daily_cost_allocations').insert(allocationsPayload);
+  try {
+    metaPayload.allocations = allocations;
+    await supabase.from('daily_closings').update({ notes: JSON.stringify(metaPayload) }).eq('id', closingId);
+  } catch (mErr) {
+    console.warn('Could not update closing notes with allocations:', mErr);
   }
+
+  await supabase.from('daily_cost_allocations').delete().eq('allocation_date', productionDate);
+
+  const totalWageCost = productionWages;
+  const totalProdKg = totalProductionKg || 1;
+  const wagePerKg = roundCurrency(totalWageCost / Math.max(1, totalProdKg));
+  const matPerKg = roundCurrency(dailyBasicIngredientsExpense / Math.max(1, totalProdKg));
+  const overheadPerKg = roundCurrency((oilTotalExpense + totalWageCost) / Math.max(1, totalProdKg));
+
+  await supabase.from('daily_cost_allocations').insert({
+    allocation_date: productionDate,
+    total_daily_wages: totalWageCost,
+    total_basic_materials_cost: dailyBasicIngredientsExpense,
+    total_production_weight_kg: totalProductionKg,
+    wage_cost_per_kg: wagePerKg,
+    basic_material_cost_per_kg: matPerKg,
+    total_overhead_cost_per_kg: overheadPerKg,
+    created_at: new Date().toISOString(),
+  });
 
   if (oilIng) {
     await supabase
@@ -1479,29 +1564,51 @@ export async function saveDailyClosing(params: {
 
 export async function fetchCostAllocations(dateOrClosingId: string): Promise<DailyCostAllocation[]> {
   const isDate = dateOrClosingId.includes('-');
-  let query = supabase.from('daily_cost_allocations').select('*');
-  if (isDate) {
-    query = query.eq('production_date', dateOrClosingId);
-  } else {
-    query = query.eq('closing_id', dateOrClosingId);
+  const targetDate = isDate ? dateOrClosingId : '';
+
+  // 1. Try retrieving product-wise allocations from daily_closings notes metadata
+  if (targetDate) {
+    try {
+      const { data: closing } = await supabase
+        .from('daily_closings')
+        .select('notes')
+        .eq('closing_date', targetDate)
+        .maybeSingle();
+
+      if (closing?.notes) {
+        const meta = JSON.parse(closing.notes);
+        if (Array.isArray(meta.allocations) && meta.allocations.length > 0) {
+          return meta.allocations;
+        }
+      }
+    } catch {}
   }
 
-  const { data, error } = await query.order('total_production_kg', { ascending: false });
-  if (error) throw error;
+  // 2. Fallback to daily_cost_allocations summary table
+  let query = supabase.from('daily_cost_allocations').select('*');
+  if (targetDate) {
+    query = query.eq('allocation_date', targetDate);
+  }
 
-  return (data || []).map((row) => ({
+  const { data, error } = await query;
+  if (error) {
+    console.warn('Could not query daily_cost_allocations:', error);
+    return [];
+  }
+
+  return (data || []).map((row: any) => ({
     id: row.id,
-    closingId: row.closing_id,
-    productionDate: row.production_date,
-    productId: row.product_id,
-    productName: row.product_name,
-    totalProductionKg: Number(row.total_production_kg) || 0,
-    batchCount: Number(row.batch_count) || 1,
-    ingredientCost: Number(row.ingredient_cost) || 0,
-    allocatedOilCost: Number(row.allocated_oil_cost) || 0,
-    allocatedProductionWages: Number(row.allocated_production_wages) || 0,
-    totalProductionCost: Number(row.total_production_cost) || 0,
-    productionCostPerKg: Number(row.production_cost_per_kg) || 0,
+    closingId: dateOrClosingId,
+    productionDate: row.allocation_date,
+    productId: '',
+    productName: 'General Production',
+    totalProductionKg: Number(row.total_production_weight_kg) || 0,
+    batchCount: 1,
+    ingredientCost: Number(row.total_basic_materials_cost) || 0,
+    allocatedOilCost: 0,
+    allocatedProductionWages: Number(row.total_daily_wages) || 0,
+    totalProductionCost: Number(row.total_basic_materials_cost) + Number(row.total_daily_wages),
+    productionCostPerKg: Number(row.wage_cost_per_kg) + Number(row.basic_material_cost_per_kg),
     createdAt: row.created_at,
   }));
 }
@@ -1918,26 +2025,32 @@ export async function fetchDailyWages(limit = 60, force = false): Promise<any[]>
     const { data, error } = await supabase
       .from('daily_wages')
       .select('*')
-      .order('production_date', { ascending: false })
+      .order('wage_date', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      productionDate: row.production_date,
-      totalWageBudget: Number(row.total_wage_budget) || 0,
-      numCooks: Number(row.num_cooks) || 0,
-      numPackers: Number(row.num_packers) || 0,
-      totalPacketsProduced: Number(row.total_packets_produced) || 0,
-      totalProductionKg: Number(row.total_production_kg) || 0,
-      productionWageAmount: Number(row.production_wage_amount) || 0,
-      packingWageAmount: Number(row.packing_wage_amount) || 0,
-      wagePerCook: Number(row.wage_per_cook) || 0,
-      wagePerPacker: Number(row.wage_per_packer) || 0,
-      notes: row.notes || '',
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    return (data || []).map((row: any) => {
+      let meta: any = {};
+      if (row.notes && typeof row.notes === 'string' && row.notes.startsWith('{') && row.notes.endsWith('}')) {
+        try { meta = JSON.parse(row.notes); } catch {}
+      }
+      return {
+        id: row.id,
+        productionDate: row.wage_date || meta.production_date,
+        totalWageBudget: meta.total_wage_budget !== undefined ? Number(meta.total_wage_budget) : (Number(row.amount) || 0),
+        numCooks: meta.num_cooks !== undefined ? Number(meta.num_cooks) : 0,
+        numPackers: meta.num_packers !== undefined ? Number(meta.num_packers) : 0,
+        totalPacketsProduced: meta.total_packets_produced !== undefined ? Number(meta.total_packets_produced) : 0,
+        totalProductionKg: meta.total_production_kg !== undefined ? Number(meta.total_production_kg) : 0,
+        productionWageAmount: meta.production_wage_amount !== undefined ? Number(meta.production_wage_amount) : 0,
+        packingWageAmount: meta.packing_wage_amount !== undefined ? Number(meta.packing_wage_amount) : 0,
+        wagePerCook: meta.wage_per_cook !== undefined ? Number(meta.wage_per_cook) : 0,
+        wagePerPacker: meta.wage_per_packer !== undefined ? Number(meta.wage_per_packer) : 0,
+        notes: meta.notes !== undefined ? meta.notes : (row.notes || ''),
+        createdAt: row.created_at,
+        updatedAt: row.created_at,
+      };
+    });
   }, { ttl: dbCache.TTL.DAILY_WAGES, force });
 }
 
@@ -1945,27 +2058,33 @@ export async function fetchDailyWage(date: string): Promise<any | null> {
   const { data, error } = await supabase
     .from('daily_wages')
     .select('*')
-    .eq('production_date', date)
+    .eq('wage_date', date)
+    .limit(1)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) return null;
 
+  let meta: any = {};
+  if (data.notes && typeof data.notes === 'string' && data.notes.startsWith('{') && data.notes.endsWith('}')) {
+    try { meta = JSON.parse(data.notes); } catch {}
+  }
+
   return {
     id: data.id,
-    productionDate: data.production_date,
-    totalWageBudget: Number(data.total_wage_budget) || 0,
-    numCooks: Number(data.num_cooks) || 0,
-    numPackers: Number(data.num_packers) || 0,
-    totalPacketsProduced: Number(data.total_packets_produced) || 0,
-    totalProductionKg: Number(data.total_production_kg) || 0,
-    productionWageAmount: Number(data.production_wage_amount) || 0,
-    packingWageAmount: Number(data.packing_wage_amount) || 0,
-    wagePerCook: Number(data.wage_per_cook) || 0,
-    wagePerPacker: Number(data.wage_per_packer) || 0,
-    notes: data.notes || '',
+    productionDate: data.wage_date || meta.production_date,
+    totalWageBudget: meta.total_wage_budget !== undefined ? Number(meta.total_wage_budget) : (Number(data.amount) || 0),
+    numCooks: meta.num_cooks !== undefined ? Number(meta.num_cooks) : 0,
+    numPackers: meta.num_packers !== undefined ? Number(meta.num_packers) : 0,
+    totalPacketsProduced: meta.total_packets_produced !== undefined ? Number(meta.total_packets_produced) : 0,
+    totalProductionKg: meta.total_production_kg !== undefined ? Number(meta.total_production_kg) : 0,
+    productionWageAmount: meta.production_wage_amount !== undefined ? Number(meta.production_wage_amount) : 0,
+    packingWageAmount: meta.packing_wage_amount !== undefined ? Number(meta.packing_wage_amount) : 0,
+    wagePerCook: meta.wage_per_cook !== undefined ? Number(meta.wage_per_cook) : 0,
+    wagePerPacker: meta.wage_per_packer !== undefined ? Number(meta.wage_per_packer) : 0,
+    notes: meta.notes !== undefined ? meta.notes : (data.notes || ''),
     createdAt: data.created_at,
-    updatedAt: data.updated_at,
+    updatedAt: data.created_at,
   };
 }
 
@@ -1982,7 +2101,16 @@ export async function saveDailyWage(params: {
   wagePerPacker: number;
   notes?: string;
 }): Promise<any> {
-  const payload = {
+  dbCache.invalidate('admin_daily_wages');
+
+  const { data: existing } = await supabase
+    .from('daily_wages')
+    .select('id')
+    .eq('wage_date', params.productionDate)
+    .limit(1)
+    .maybeSingle();
+
+  const notesJson = JSON.stringify({
     production_date: params.productionDate,
     total_wage_budget: params.totalWageBudget,
     num_cooks: params.numCooks,
@@ -1993,20 +2121,39 @@ export async function saveDailyWage(params: {
     packing_wage_amount: params.packingWageAmount,
     wage_per_cook: params.wagePerCook,
     wage_per_packer: params.wagePerPacker,
-    notes: params.notes || null,
-    updated_at: new Date().toISOString(),
-  };
+    notes: params.notes || '',
+  });
 
-  dbCache.invalidate('admin_daily_wages');
+  let resultData;
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from('daily_wages')
+      .update({
+        amount: params.totalWageBudget || 0,
+        notes: notesJson,
+      })
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    resultData = data;
+  } else {
+    const { data, error } = await supabase
+      .from('daily_wages')
+      .insert({
+        wage_date: params.productionDate,
+        worker_name: 'Kitchen Team',
+        category: 'other',
+        amount: params.totalWageBudget || 0,
+        notes: notesJson,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    resultData = data;
+  }
 
-  const { data, error } = await supabase
-    .from('daily_wages')
-    .upsert(payload, { onConflict: 'production_date' })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
+  return resultData;
 }
 
 export async function fetchTotalPacketsForDate(date: string): Promise<number> {
@@ -2046,8 +2193,9 @@ export async function fetchProductSellingPrices(force = false): Promise<any[]> {
     return (data || []).map((row: any) => ({
       id: row.id,
       productId: row.product_id,
-      wholesalePricePerKg: Number(row.wholesale_price_per_kg) || 0,
-      updatedAt: row.updated_at,
+      wholesalePricePerKg: Number(row.wholesale_price ?? row.wholesale_price_per_kg) || 0,
+      retailPricePerKg: Number(row.retail_price ?? row.retail_price_per_kg) || 0,
+      effectiveDate: row.effective_from || row.effective_date,
       createdAt: row.created_at,
     }));
   }, { ttl: dbCache.TTL.SELLING_PRICES, force });
@@ -2056,18 +2204,37 @@ export async function fetchProductSellingPrices(force = false): Promise<any[]> {
 export async function saveProductSellingPrice(productId: string, pricePerKg: number): Promise<any> {
   dbCache.invalidate('admin_selling_prices');
 
-  const { data, error } = await supabase
+  const { data: existing } = await supabase
     .from('product_selling_prices')
-    .upsert({
-      product_id: productId,
-      wholesale_price_per_kg: pricePerKg,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'product_id' })
-    .select()
-    .single();
+    .select('id')
+    .eq('product_id', productId)
+    .limit(1)
+    .maybeSingle();
 
-  if (error) throw error;
-  return data;
+  let res;
+  if (existing?.id) {
+    res = await supabase
+      .from('product_selling_prices')
+      .update({
+        wholesale_price: pricePerKg,
+      })
+      .eq('id', existing.id)
+      .select()
+      .single();
+  } else {
+    res = await supabase
+      .from('product_selling_prices')
+      .insert({
+        product_id: productId,
+        wholesale_price: pricePerKg,
+        effective_from: new Date().toISOString().split('T')[0],
+      })
+      .select()
+      .single();
+  }
+
+  if (res.error) throw res.error;
+  return res.data;
 }
 
 // ============================================================================
