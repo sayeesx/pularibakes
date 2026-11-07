@@ -1720,15 +1720,17 @@ export async function recordPacking(params: {
     }
   }
 
+  let packetTypeId = packagingItemId;
   if (unitCost <= 0) {
     try {
       const { data: pt } = await supabase
         .from('packet_types')
-        .select('cost_per_packet, bundle_cost, bundle_quantity')
+        .select('id, cost_per_packet, bundle_cost, bundle_quantity')
         .eq('name', packetSize)
         .limit(1)
         .maybeSingle();
       if (pt) {
+        packetTypeId = pt.id;
         unitCost = Number(pt.cost_per_packet) || (Number(pt.bundle_cost) / Math.max(1, Number(pt.bundle_quantity))) || 0;
       }
     } catch (e) {
@@ -1740,37 +1742,95 @@ export async function recordPacking(params: {
   const packingLabourCost = roundCurrency(packetsPacked * labourRate);
   const totalPackingCost = roundCurrency(packagingCost + packingLabourCost);
   const weightPackedKg = roundStock((packetsPacked * sizeGrams) / 1000.0);
+  const packedAtIso = packingDate ? new Date(packingDate).toISOString() : new Date().toISOString();
 
-  const { data: created, error } = await supabase
-    .from('packing_records')
-    .insert({
-      packing_date: packingDate,
-      product_id: productId,
-      production_run_id: productionRunId || null,
-      packaging_item_id: packagingItemId || null,
-      packet_size: packetSize,
-      packets_packed: packetsPacked,
-      covers_consumed: packetsPacked,
-      cover_unit_cost: unitCost,
-      packaging_cost: packagingCost,
-      packing_labour_rate: labourRate,
-      packing_labour_cost: packingLabourCost,
-      total_packing_cost: totalPackingCost,
-      weight_packed_kg: weightPackedKg,
-      operator_name: operatorName,
-      notes: notes || null,
-      created_at: new Date().toISOString(),
-    })
-    .select('*')
-    .single();
+  // Find existing record for this run and packet type
+  let existingRecord: any = null;
+  if (productionRunId) {
+    let query = supabase
+      .from('packing_records')
+      .select('*, packet_types(id, name, cost_per_packet)')
+      .eq('production_run_id', productionRunId);
+    if (packetTypeId) {
+      query = query.eq('packet_type_id', packetTypeId);
+    }
+    const { data: existingRows } = await query;
+    if (existingRows && existingRows.length > 0) {
+      existingRecord = existingRows.find(
+        (r: any) =>
+          (packetTypeId && r.packet_type_id === packetTypeId) ||
+          (r.packet_types?.name || '').trim().toLowerCase() === packetSize.trim().toLowerCase()
+      ) || existingRows[0];
+    }
+  }
 
-  if (error) throw error;
+  let savedRecord: any = null;
+
+  if (packetsPacked <= 0) {
+    if (existingRecord) {
+      await supabase.from('packing_records').delete().eq('id', existingRecord.id);
+    }
+    dbCache.invalidate('admin_packing_records');
+    dbCache.invalidate('admin_production_runs');
+    return {
+      id: existingRecord?.id || `pack-${Date.now()}`,
+      packingDate,
+      productId,
+      productName: prodName,
+      productionRunId,
+      packagingItemId: packetTypeId,
+      packetSize,
+      packetsPacked: 0,
+      coversConsumed: 0,
+      coverUnitCost: unitCost,
+      packagingCost: 0,
+      packingLabourRate: labourRate,
+      packingLabourCost: 0,
+      totalPackingCost: 0,
+      weightPackedKg: 0,
+      operatorName,
+      notes: notes || undefined,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  if (existingRecord) {
+    const { data: updated, error } = await supabase
+      .from('packing_records')
+      .update({
+        quantity_packed: packetsPacked,
+        total_cost: totalPackingCost,
+        operator: operatorName,
+      })
+      .eq('id', existingRecord.id)
+      .select('*, packet_types(id, name, cost_per_packet)')
+      .single();
+
+    if (error) throw error;
+    savedRecord = updated;
+  } else {
+    const { data: created, error } = await supabase
+      .from('packing_records')
+      .insert({
+        production_run_id: productionRunId || null,
+        packet_type_id: packetTypeId || null,
+        quantity_packed: packetsPacked,
+        total_cost: totalPackingCost,
+        operator: operatorName,
+        packed_at: packedAtIso,
+      })
+      .select('*, packet_types(id, name, cost_per_packet)')
+      .single();
+
+    if (error) throw error;
+    savedRecord = created;
+  }
 
   await supabase.from('audit_logs').insert({
     actor: operatorName,
     action: 'RECORD_PACKING',
     entity_type: 'PACKING',
-    entity_id: created.id,
+    entity_id: savedRecord.id,
     details: {
       productName: prodName,
       packetSize,
@@ -1784,31 +1844,34 @@ export async function recordPacking(params: {
   dbCache.invalidate('admin_production_runs');
 
   return {
-    id: created.id,
-    packingDate: created.packing_date,
-    productId: created.product_id,
-    productName: created.products?.name || prodName,
-    productionRunId: created.production_run_id,
-    packagingItemId: created.packaging_item_id,
-    packetSize: created.packet_size,
-    packetsPacked: Number(created.packets_packed),
-    coversConsumed: Number(created.covers_consumed),
-    coverUnitCost: Number(created.cover_unit_cost),
-    packagingCost: Number(created.packaging_cost),
-    packingLabourRate: Number(created.packing_labour_rate),
-    packingLabourCost: Number(created.packing_labour_cost),
-    totalPackingCost: Number(created.total_packing_cost),
-    weightPackedKg: Number(created.weight_packed_kg),
-    operatorName: created.operator_name,
-    notes: created.notes,
-    createdAt: created.created_at,
+    id: savedRecord.id,
+    packingDate: savedRecord.packed_at ? savedRecord.packed_at.split('T')[0] : packingDate,
+    productId,
+    productName: prodName,
+    productionRunId: savedRecord.production_run_id,
+    packagingItemId: savedRecord.packet_type_id || packetTypeId,
+    packetSize: savedRecord.packet_types?.name || packetSize,
+    packetsPacked: Number(savedRecord.quantity_packed) || packetsPacked,
+    coversConsumed: Number(savedRecord.quantity_packed) || packetsPacked,
+    coverUnitCost: Number(savedRecord.packet_types?.cost_per_packet) || unitCost,
+    packagingCost,
+    packingLabourRate: labourRate,
+    packingLabourCost,
+    totalPackingCost: Number(savedRecord.total_cost) || totalPackingCost,
+    weightPackedKg,
+    operatorName: savedRecord.operator || operatorName,
+    notes: notes || undefined,
+    createdAt: savedRecord.packed_at || new Date().toISOString(),
   };
 }
 
 export async function fetchPackingRecords(options?: { productId?: string; date?: string; limit?: number }, force = false): Promise<PackingRecord[]> {
   const cacheKey = `admin_packing_records_${options?.productId || 'all'}_${options?.date || 'all'}_${options?.limit || 0}`;
   return dbCache.wrap(cacheKey, async () => {
-    let query = supabase.from('packing_records').select('*').order('packed_at', { ascending: false });
+    let query = supabase
+      .from('packing_records')
+      .select('*, packet_types(id, name, cost_per_packet), production_runs(id, product_id, products(id, name))')
+      .order('packed_at', { ascending: false });
     if (options?.limit) query = query.limit(options.limit);
 
     const { data, error } = await query;
@@ -1816,23 +1879,23 @@ export async function fetchPackingRecords(options?: { productId?: string; date?:
 
     let records = (data || []).map((row: any) => ({
       id: row.id,
-      packingDate: row.packing_date || (row.packed_at ? row.packed_at.split('T')[0] : new Date().toISOString().split('T')[0]),
-      productId: row.product_id,
-      productName: row.product_name || 'Snack',
+      packingDate: row.packed_at ? row.packed_at.split('T')[0] : (row.packing_date || new Date().toISOString().split('T')[0]),
+      productId: row.production_runs?.product_id || row.product_id || '',
+      productName: row.production_runs?.products?.name || row.product_name || 'Snack',
       productionRunId: row.production_run_id,
-      packagingItemId: row.packaging_item_id || row.packet_type_id,
-      packetSize: row.packet_size || 'Standard',
+      packagingItemId: row.packet_type_id || row.packaging_item_id,
+      packetSize: row.packet_types?.name || row.packet_size || 'Standard',
       packetsPacked: Number(row.quantity_packed ?? row.packets_packed) || 0,
-      coversConsumed: Number(row.covers_consumed) || 0,
-      coverUnitCost: Number(row.cover_unit_cost) || 0,
+      coversConsumed: Number(row.quantity_packed ?? row.covers_consumed) || 0,
+      coverUnitCost: Number(row.packet_types?.cost_per_packet ?? row.cover_unit_cost) || 0,
       packagingCost: Number(row.packaging_cost) || 0,
       packingLabourRate: Number(row.packing_labour_rate) || 0,
       packingLabourCost: Number(row.packing_labour_cost) || 0,
-      totalPackingCost: Number(row.total_packing_cost ?? row.total_cost) || 0,
+      totalPackingCost: Number(row.total_cost ?? row.total_packing_cost) || 0,
       weightPackedKg: Number(row.weight_packed_kg) || 0,
-      operatorName: row.operator_name || row.operator || 'Staff',
+      operatorName: row.operator || row.operator_name || 'Staff',
       notes: row.notes,
-      createdAt: row.created_at || row.packed_at,
+      createdAt: row.packed_at || row.created_at,
     }));
 
     if (options?.productId) {

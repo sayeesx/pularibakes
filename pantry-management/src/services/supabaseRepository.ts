@@ -2262,6 +2262,7 @@ export class SupabaseRepository implements IEpsoRepository {
     packetSize: string;
     packetsPacked: number;
     operatorName: string;
+    coverUnitCost?: number;
     notes?: string;
   }): Promise<PackingRecord> {
     const client = this.checkClient();
@@ -2273,48 +2274,82 @@ export class SupabaseRepository implements IEpsoRepository {
       packetSize,
       packetsPacked,
       operatorName,
+      coverUnitCost,
       notes = '',
     } = params;
 
-    const { data: prod } = await client.from('products').select('name').eq('id', productId).single();
-    const prodName = prod?.name || 'Product';
-
-    // 1. Check if a record already exists for this batch and packet_size
-    let existingRecord: any = null;
-    if (productionRunId) {
-      const { data: existing } = await client
-        .from('packing_records')
-        .select('*')
-        .eq('production_run_id', productionRunId)
-        .eq('packet_size', packetSize)
-        .limit(1)
-        .maybeSingle();
-      existingRecord = existing;
+    let prodName = 'Product';
+    if (productId) {
+      const { data: prod } = await client.from('products').select('name').eq('id', productId).maybeSingle();
+      if (prod?.name) prodName = prod.name;
     }
 
-    const prevPacked = existingRecord ? Number(existingRecord.packets_packed || existingRecord.quantity_packed || 0) : 0;
-    const stockDelta = packetsPacked - prevPacked;
-
-    let unitCost = 0;
+    // 1. Resolve packet_type_id and unit cost
+    let packetTypeId = packagingItemId;
+    let unitCost = Number(coverUnitCost) || 0;
     let labourRate = 1.0;
     let sizeGrams = 100;
-    let currStock = 0;
 
-    if (packagingItemId) {
-      const { data: packItem } = await client
-        .from('packaging_items')
-        .select('*')
-        .eq('id', packagingItemId)
-        .single();
+    const { data: pt } = await client
+      .from('packet_types')
+      .select('id, name, cost_per_packet')
+      .eq('name', packetSize)
+      .limit(1)
+      .maybeSingle();
 
-      if (packItem) {
-        unitCost = Number(packItem.unit_cost ?? packItem.cost_per_unit) || 0;
-        labourRate = Number(packItem.packing_labour_rate) || 1.0;
-        sizeGrams = Number(packItem.size_grams) || 100;
-        currStock = Number(packItem.current_stock) || 0;
+    if (pt) {
+      packetTypeId = pt.id;
+      if (unitCost <= 0) unitCost = Number(pt.cost_per_packet) || 0;
+    } else if (packetTypeId) {
+      const { data: ptById } = await client
+        .from('packet_types')
+        .select('id, name, cost_per_packet')
+        .eq('id', packetTypeId)
+        .maybeSingle();
+      if (ptById && unitCost <= 0) {
+        unitCost = Number(ptById.cost_per_packet) || 0;
+      }
+    }
 
-        if (stockDelta !== 0) {
+    // 2. Find existing record for this run and packet type
+    let existingRecord: any = null;
+    if (productionRunId) {
+      let query = client
+        .from('packing_records')
+        .select('*, packet_types(id, name, cost_per_packet)')
+        .eq('production_run_id', productionRunId);
+      if (packetTypeId) {
+        query = query.eq('packet_type_id', packetTypeId);
+      }
+      const { data: existingRows } = await query;
+      if (existingRows && existingRows.length > 0) {
+        existingRecord = existingRows.find(
+          (r: any) =>
+            (packetTypeId && r.packet_type_id === packetTypeId) ||
+            (r.packet_types?.name || '').trim().toLowerCase() === packetSize.trim().toLowerCase()
+        ) || existingRows[0];
+      }
+    }
+
+    const prevPacked = existingRecord ? Number(existingRecord.quantity_packed || 0) : 0;
+    const stockDelta = packetsPacked - prevPacked;
+
+    // 3. Update packaging_items inventory & stock movements (if tracked)
+    if (packagingItemId && stockDelta !== 0) {
+      try {
+        const { data: packItem } = await client
+          .from('packaging_items')
+          .select('*')
+          .eq('id', packagingItemId)
+          .maybeSingle();
+
+        if (packItem) {
+          unitCost = Number(packItem.unit_cost ?? packItem.cost_per_unit) || unitCost;
+          labourRate = Number(packItem.packing_labour_rate) || 1.0;
+          sizeGrams = Number(packItem.size_grams) || 100;
+          const currStock = Number(packItem.current_stock) || 0;
           const newStock = Math.max(0, currStock - stockDelta);
+
           await client
             .from('packaging_items')
             .update({ current_stock: newStock, updated_at: new Date().toISOString() })
@@ -2331,30 +2366,16 @@ export class SupabaseRepository implements IEpsoRepository {
             unit_cost: unitCost,
             total_cost: Math.abs(stockDelta) * unitCost,
             operator: operatorName,
-            reason: `Packaging covers ${stockDelta > 0 ? 'consumed' : 'returned'} for ${packetsPacked} packets (${prodName} - ${packetSize}) - Packing ${packingDate}`,
+            reason: `Packaging covers ${stockDelta > 0 ? 'consumed' : 'returned'} for ${packetsPacked} packets (${prodName} - ${packetSize})`,
             created_at: new Date().toISOString(),
           });
         }
+      } catch (packErr) {
+        console.warn('Packaging item stock movement notice:', packErr);
       }
     }
 
-    if (unitCost <= 0) {
-      try {
-        const { data: pt } = await client
-          .from('packet_types')
-          .select('cost_per_packet, bundle_cost, bundle_quantity')
-          .eq('name', packetSize)
-          .limit(1)
-          .maybeSingle();
-        if (pt) {
-          unitCost = Number(pt.cost_per_packet) || (Number(pt.bundle_cost) / Math.max(1, Number(pt.bundle_quantity))) || 0;
-        }
-      } catch (e) {
-        console.warn('Could not query packet_types cost for', packetSize, e);
-      }
-    }
-
-    // 2. If packet count is reduced to 0, delete the existing record to keep DB strictly accurate
+    // 4. If packet count is reduced to 0, delete the existing record
     if (packetsPacked <= 0) {
       if (existingRecord) {
         await client.from('packing_records').delete().eq('id', existingRecord.id);
@@ -2367,7 +2388,7 @@ export class SupabaseRepository implements IEpsoRepository {
         productId,
         productName: prodName,
         productionRunId,
-        packagingItemId,
+        packagingItemId: packetTypeId,
         packetSize,
         packetsPacked: 0,
         coversConsumed: 0,
@@ -2387,56 +2408,38 @@ export class SupabaseRepository implements IEpsoRepository {
     const packingLabourCost = roundCurrency(packetsPacked * labourRate);
     const totalPackingCost = roundCurrency(packagingCost + packingLabourCost);
     const weightPackedKg = roundStock((packetsPacked * sizeGrams) / 1000.0);
+    const packedAtIso = packingDate ? new Date(packingDate).toISOString() : new Date().toISOString();
 
     let savedRecord: any = null;
 
     if (existingRecord) {
-      // 3. Update existing record without inserting duplicates
+      // 5. Update existing record using schema-compatible columns
       const { data: updated, error } = await client
         .from('packing_records')
         .update({
-          packing_date: packingDate,
-          packets_packed: packetsPacked,
-          covers_consumed: packetsPacked,
-          cover_unit_cost: unitCost,
-          packaging_cost: packagingCost,
-          packing_labour_rate: labourRate,
-          packing_labour_cost: packingLabourCost,
-          total_packing_cost: totalPackingCost,
-          weight_packed_kg: weightPackedKg,
-          operator_name: operatorName,
-          notes: notes || null,
-          updated_at: new Date().toISOString(),
+          quantity_packed: packetsPacked,
+          total_cost: totalPackingCost,
+          operator: operatorName,
         })
         .eq('id', existingRecord.id)
-        .select('*')
+        .select('*, packet_types(id, name, cost_per_packet)')
         .single();
 
       if (error) throw new Error(error.message);
       savedRecord = updated;
     } else {
-      // 4. Insert new record without schema cache foreign key join error
+      // 6. Insert new record using schema-compatible columns
       const { data: created, error } = await client
         .from('packing_records')
         .insert({
-          packing_date: packingDate,
-          product_id: productId,
           production_run_id: productionRunId || null,
-          packaging_item_id: packagingItemId || null,
-          packet_size: packetSize,
-          packets_packed: packetsPacked,
-          covers_consumed: packetsPacked,
-          cover_unit_cost: unitCost,
-          packaging_cost: packagingCost,
-          packing_labour_rate: labourRate,
-          packing_labour_cost: packingLabourCost,
-          total_packing_cost: totalPackingCost,
-          weight_packed_kg: weightPackedKg,
-          operator_name: operatorName,
-          notes: notes || null,
-          created_at: new Date().toISOString(),
+          packet_type_id: packetTypeId || null,
+          quantity_packed: packetsPacked,
+          total_cost: totalPackingCost,
+          operator: operatorName,
+          packed_at: packedAtIso,
         })
-        .select('*')
+        .select('*, packet_types(id, name, cost_per_packet)')
         .single();
 
       if (error) throw new Error(error.message);
@@ -2448,23 +2451,23 @@ export class SupabaseRepository implements IEpsoRepository {
 
     return {
       id: savedRecord.id,
-      packingDate: savedRecord.packing_date,
-      productId: savedRecord.product_id,
+      packingDate: savedRecord.packed_at ? savedRecord.packed_at.split('T')[0] : packingDate,
+      productId,
       productName: prodName,
       productionRunId: savedRecord.production_run_id,
-      packagingItemId: savedRecord.packaging_item_id,
-      packetSize: savedRecord.packet_size,
-      packetsPacked: Number(savedRecord.packets_packed),
-      coversConsumed: Number(savedRecord.covers_consumed),
-      coverUnitCost: Number(savedRecord.cover_unit_cost),
-      packagingCost: Number(savedRecord.packaging_cost),
-      packingLabourRate: Number(savedRecord.packing_labour_rate),
-      packingLabourCost: Number(savedRecord.packing_labour_cost),
-      totalPackingCost: Number(savedRecord.total_packing_cost),
-      weightPackedKg: Number(savedRecord.weight_packed_kg),
-      operatorName: savedRecord.operator_name,
-      notes: savedRecord.notes,
-      createdAt: savedRecord.created_at,
+      packagingItemId: savedRecord.packet_type_id || packetTypeId,
+      packetSize: savedRecord.packet_types?.name || packetSize,
+      packetsPacked: Number(savedRecord.quantity_packed) || packetsPacked,
+      coversConsumed: Number(savedRecord.quantity_packed) || packetsPacked,
+      coverUnitCost: Number(savedRecord.packet_types?.cost_per_packet) || unitCost,
+      packagingCost,
+      packingLabourRate: labourRate,
+      packingLabourCost,
+      totalPackingCost: Number(savedRecord.total_cost) || totalPackingCost,
+      weightPackedKg,
+      operatorName: savedRecord.operator || operatorName,
+      notes,
+      createdAt: savedRecord.packed_at || new Date().toISOString(),
     };
   }
 
@@ -2473,7 +2476,10 @@ export class SupabaseRepository implements IEpsoRepository {
       `packing_records_${JSON.stringify(options || {})}`,
       async () => {
         const client = this.checkClient();
-        let query = client.from('packing_records').select('*').order('packed_at', { ascending: false });
+        let query = client
+          .from('packing_records')
+          .select('*, packet_types(id, name, cost_per_packet), production_runs(id, product_id, products(id, name))')
+          .order('packed_at', { ascending: false });
         if (options?.limit) query = query.limit(options.limit);
 
         const { data, error } = await query;
@@ -2481,23 +2487,23 @@ export class SupabaseRepository implements IEpsoRepository {
 
         let records = (data || []).map((row: any) => ({
           id: row.id,
-          packingDate: row.packing_date || (row.packed_at ? row.packed_at.split('T')[0] : new Date().toISOString().split('T')[0]),
-          productId: row.product_id,
-          productName: row.product_name || 'Snack',
+          packingDate: row.packed_at ? row.packed_at.split('T')[0] : (row.packing_date || new Date().toISOString().split('T')[0]),
+          productId: row.production_runs?.product_id || row.product_id || '',
+          productName: row.production_runs?.products?.name || row.product_name || 'Snack',
           productionRunId: row.production_run_id,
-          packagingItemId: row.packaging_item_id || row.packet_type_id,
-          packetSize: row.packet_size || 'Standard',
+          packagingItemId: row.packet_type_id || row.packaging_item_id,
+          packetSize: row.packet_types?.name || row.packet_size || 'Standard',
           packetsPacked: Number(row.quantity_packed ?? row.packets_packed) || 0,
-          coversConsumed: Number(row.covers_consumed) || 0,
-          coverUnitCost: Number(row.cover_unit_cost) || 0,
+          coversConsumed: Number(row.quantity_packed ?? row.covers_consumed) || 0,
+          coverUnitCost: Number(row.packet_types?.cost_per_packet ?? row.cover_unit_cost) || 0,
           packagingCost: Number(row.packaging_cost) || 0,
           packingLabourRate: Number(row.packing_labour_rate) || 0,
           packingLabourCost: Number(row.packing_labour_cost) || 0,
-          totalPackingCost: Number(row.total_packing_cost ?? row.total_cost) || 0,
+          totalPackingCost: Number(row.total_cost ?? row.total_packing_cost) || 0,
           weightPackedKg: Number(row.weight_packed_kg) || 0,
-          operatorName: row.operator_name || row.operator || 'Staff',
+          operatorName: row.operator || row.operator_name || 'Staff',
           notes: row.notes,
-          createdAt: row.created_at || row.packed_at,
+          createdAt: row.packed_at || row.created_at,
         }));
 
         if (options?.productId) {
@@ -2523,14 +2529,6 @@ export class SupabaseRepository implements IEpsoRepository {
     if (error) {
       console.error('Error deleting previous packing records for run:', error);
       throw new Error(error.message);
-    }
-
-    if (runNumber) {
-      await client
-        .from('packing_records')
-        .delete()
-        .is('production_run_id', null)
-        .eq('notes', `Batch #${runNumber}`);
     }
 
     dbCache.invalidate('packing_records');
