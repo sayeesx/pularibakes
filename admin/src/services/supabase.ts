@@ -783,7 +783,7 @@ export async function deleteProductionRun(
           unit_cost: 0,
           total_cost: 0,
           operator: options?.operatorName || 'Admin',
-          reason: options?.reason || `Batch #${run.run_number} deleted: -${deductQty} ${prod.unit} removed from stock`,
+          reason: options?.reason || `Batch #${run.id.slice(0, 8)} deleted: -${deductQty} ${prod.unit} removed from stock`,
           created_at: new Date().toISOString(),
         });
       } catch (smErr) {
@@ -825,7 +825,7 @@ export async function deleteProductionRun(
               unit_cost: 0,
               total_cost: 0,
               operator: options?.operatorName || 'Admin',
-              reason: `Batch #${run.run_number} deleted: +${qtyToRestore} ${ing.unit} restored to stock`,
+              reason: `Batch #${run.id.slice(0, 8)} deleted: +${qtyToRestore} ${ing.unit} restored to stock`,
               created_at: new Date().toISOString(),
             });
           } catch (smErr) {

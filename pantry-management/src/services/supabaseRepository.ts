@@ -2466,14 +2466,6 @@ export class SupabaseRepository implements IEpsoRepository {
       notes: savedRecord.notes,
       createdAt: savedRecord.created_at,
     };
-      packingLabourRate: Number(created.packing_labour_rate),
-      packingLabourCost: Number(created.packing_labour_cost),
-      totalPackingCost: Number(created.total_packing_cost),
-      weightPackedKg: Number(created.weight_packed_kg),
-      operatorName: created.operator_name,
-      notes: created.notes,
-      createdAt: created.created_at,
-    };
   }
 
   async listPackingRecords(options?: { productId?: string; date?: string; limit?: number }): Promise<PackingRecord[]> {

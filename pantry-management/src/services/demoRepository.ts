@@ -664,6 +664,12 @@ export class DemoRepository implements IEpsoRepository {
     if (idx === -1) throw new Error('Run not found');
 
     const oldRun = runs[idx];
+
+    // Once produced quantity is set and batch is completed, prevent further edits to produced quantity
+    if (oldRun.status === 'completed' && oldRun.actualQuantity > 0 && params.actualQuantity !== oldRun.actualQuantity) {
+      throw new Error('Produced quantity cannot be edited once the batch is completed');
+    }
+
     const now = new Date().toISOString();
     const operator = params.operatorName || oldRun.operatorName || 'Kitchen Staff';
     const movements = this.getItem<StockMovement[]>(STORAGE_KEYS.MOVEMENTS, []);

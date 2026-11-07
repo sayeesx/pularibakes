@@ -4,9 +4,12 @@ import { DemoRepository } from '../services/demoRepository';
 describe('Pantry Management PWA Fixes Validation', () => {
   let repo: DemoRepository;
 
-  beforeEach(() => {
-    localStorage.clear();
+  beforeEach(async () => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.clear();
+    }
     repo = new DemoRepository();
+    await repo.resetDemoData();
   });
 
   // 1 & 2. PACKET RELATIONSHIP & NO DUPLICATE PACKETS
@@ -110,11 +113,9 @@ describe('Pantry Management PWA Fixes Validation', () => {
         ingredientsConsumed: [],
       });
 
-      // Mark batch as completed
-      const allRuns = await repo.listProductionRuns();
-      const runIdx = allRuns.findIndex((r) => r.id === batch.id);
-      allRuns[runIdx].status = 'completed';
-      localStorage.setItem('pb_runs', JSON.stringify(allRuns));
+      // Batch is already completed because actualQuantity is 10 (> 0)
+      expect(batch.status).toBe('completed');
+      expect(batch.actualQuantity).toBe(10);
 
       // Attempting to modify actualQuantity on a completed batch should throw
       await expect(

@@ -111,7 +111,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
         );
 
         const hasTrackedStock = Boolean(matchingPack && matchingPack.currentStock !== undefined);
-        const stock = hasTrackedStock ? Number(matchingPack.currentStock) : undefined;
+        const stock = matchingPack && matchingPack.currentStock !== undefined ? Number(matchingPack.currentStock) : undefined;
         const isOutOfStock = Boolean(
           matchingPack &&
             ((matchingPack.currentStock !== undefined && Number(matchingPack.currentStock) <= 0) ||
