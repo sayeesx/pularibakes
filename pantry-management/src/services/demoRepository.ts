@@ -904,7 +904,7 @@ export class DemoRepository implements IEpsoRepository {
 
     if (restock) {
       // Revert ingredient consumption (add back to stock) and deduct product output
-      return this.cancelProductionRun({
+      await this.cancelProductionRun({
         runId,
         reason: 'restocked',
         operatorName,
@@ -939,21 +939,19 @@ export class DemoRepository implements IEpsoRepository {
         this.setItem(STORAGE_KEYS.MOVEMENTS, movements);
       }
 
-      run.status = 'cancelled';
-      run.cancellationReason = 'wastage';
-      run.cancelledAt = now;
-      run.cancelledBy = operatorName;
-      run.updatedAt = now;
-      runs[idx] = run;
-      this.setItem(STORAGE_KEYS.RUNS, runs);
-
       this.recordAudit(operatorName, 'DELETE_BATCH_WASTAGE', 'PRODUCTION', run.id, {
         product: run.productName,
         quantity: run.actualQuantity,
       });
-
-      return true;
     }
+
+    // Completely remove the deleted run from storage so it does not appear in Pantry Management
+    const updatedRuns = this.getItem<ProductionRun[]>(STORAGE_KEYS.RUNS, []).filter((r) => r.id !== runId);
+    this.setItem(STORAGE_KEYS.RUNS, updatedRuns);
+
+    // Also clean up related packing records
+    await this.deletePackingRecordsForRun(runId, run.runNumber);
+    return true;
   }
 
   // ============================================================================
@@ -1281,12 +1279,27 @@ export class DemoRepository implements IEpsoRepository {
   }
 
   async listPackagingItems(_productId?: string): Promise<PackagingItem[]> {
-    return [];
+    const stored = this.getItem<PackagingItem[]>('pb_packaging_items', []);
+    if (stored.length > 0) return stored;
+
+    const defaultItems: PackagingItem[] = [
+      { id: 'pkg-1', productId: '', sizeLabel: '3kg HM Packet', sizeGrams: 3000, currentStock: 150, unitCost: 3.5, packingLabourRate: 1.0, isActive: true },
+      { id: 'pkg-2', productId: '', sizeLabel: '2KG HM Packet', sizeGrams: 2000, currentStock: 90, unitCost: 2.8, packingLabourRate: 1.0, isActive: true },
+      { id: 'pkg-3', productId: '', sizeLabel: '10 x 12 Packet', sizeGrams: 500, currentStock: 120, unitCost: 1.5, packingLabourRate: 1.0, isActive: true },
+      { id: 'pkg-4', productId: '', sizeLabel: '10 x 14 Packet', sizeGrams: 750, currentStock: 0, unitCost: 1.8, packingLabourRate: 1.0, isActive: true }, // Out of stock example
+      { id: 'pkg-5', productId: '', sizeLabel: '10 x 16 Packet', sizeGrams: 1000, currentStock: 200, unitCost: 2.0, packingLabourRate: 1.0, isActive: true },
+      { id: 'pkg-6', productId: '', sizeLabel: '8 x 10 Packet', sizeGrams: 250, currentStock: 60, unitCost: 1.2, packingLabourRate: 1.0, isActive: true },
+      { id: 'pkg-7', productId: '', sizeLabel: '8 x 12 Packet', sizeGrams: 350, currentStock: 0, unitCost: 1.4, packingLabourRate: 1.0, isActive: true }, // Out of stock example
+    ];
+    this.setItem('pb_packaging_items', defaultItems);
+    return defaultItems;
   }
 
   async savePackagingItem(item: Partial<PackagingItem> & { productId: string; sizeLabel: string }): Promise<PackagingItem> {
-    return {
-      id: item.id || `pack-${Date.now()}`,
+    const list = await this.listPackagingItems();
+    const id = item.id || `pack-${Date.now()}`;
+    const newItem: PackagingItem = {
+      id,
       productId: item.productId,
       sizeLabel: item.sizeLabel,
       sizeGrams: item.sizeGrams || 100,
@@ -1295,11 +1308,21 @@ export class DemoRepository implements IEpsoRepository {
       packingLabourRate: item.packingLabourRate || 1.0,
       isActive: item.isActive ?? true,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
+    const idx = list.findIndex((p) => p.id === id);
+    if (idx >= 0) {
+      list[idx] = newItem;
+    } else {
+      list.push(newItem);
+    }
+    this.setItem('pb_packaging_items', list);
+    return newItem;
   }
 
-  async deletePackagingItem(_id: string): Promise<void> {
-    // Demo no-op
+  async deletePackagingItem(id: string): Promise<void> {
+    const list = (await this.listPackagingItems()).filter((p) => p.id !== id);
+    this.setItem('pb_packaging_items', list);
   }
 
   async listPacketTypes(): Promise<PacketType[]> {
@@ -1340,10 +1363,49 @@ export class DemoRepository implements IEpsoRepository {
     operatorName: string;
     notes?: string;
   }): Promise<PackingRecord> {
-    return {
-      id: `packing-${Date.now()}`,
+    const records = this.getItem<PackingRecord[]>('pb_packing_records', []);
+    const product = await this.getProductById(params.productId);
+    const prodName = product?.name || 'Product';
+
+    const existingIdx = records.findIndex(
+      (r) =>
+        (params.productionRunId ? r.productionRunId === params.productionRunId : true) &&
+        r.packetSize.toLowerCase() === params.packetSize.toLowerCase()
+    );
+
+    // If packetsPacked is 0, delete the record
+    if (params.packetsPacked <= 0) {
+      if (existingIdx >= 0) {
+        records.splice(existingIdx, 1);
+        this.setItem('pb_packing_records', records);
+      }
+      return {
+        id: `packing-${Date.now()}`,
+        packingDate: params.packingDate,
+        productId: params.productId,
+        productName: prodName,
+        productionRunId: params.productionRunId,
+        packagingItemId: params.packagingItemId,
+        packetSize: params.packetSize,
+        packetsPacked: 0,
+        coversConsumed: 0,
+        coverUnitCost: 0,
+        packagingCost: 0,
+        packingLabourRate: 1.0,
+        packingLabourCost: 0,
+        totalPackingCost: 0,
+        weightPackedKg: 0,
+        operatorName: params.operatorName,
+        notes: params.notes,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    const rec: PackingRecord = {
+      id: existingIdx >= 0 ? records[existingIdx].id : `packing-${Date.now()}`,
       packingDate: params.packingDate,
       productId: params.productId,
+      productName: prodName,
       productionRunId: params.productionRunId,
       packagingItemId: params.packagingItemId,
       packetSize: params.packetSize,
@@ -1357,15 +1419,50 @@ export class DemoRepository implements IEpsoRepository {
       weightPackedKg: (params.packetsPacked * 100) / 1000,
       operatorName: params.operatorName,
       notes: params.notes,
-      createdAt: new Date().toISOString(),
+      createdAt: existingIdx >= 0 ? records[existingIdx].createdAt : new Date().toISOString(),
     };
+
+    if (existingIdx >= 0) {
+      records[existingIdx] = rec;
+    } else {
+      records.push(rec);
+    }
+    this.setItem('pb_packing_records', records);
+
+    // Adjust packaging stock in demo storage
+    const packItems = await this.listPackagingItems();
+    const packIdx = packItems.findIndex((p) => p.sizeLabel.toLowerCase() === params.packetSize.toLowerCase());
+    if (packIdx >= 0) {
+      packItems[packIdx].currentStock = Math.max(0, packItems[packIdx].currentStock - params.packetsPacked);
+      this.setItem('pb_packaging_items', packItems);
+    }
+
+    return rec;
   }
 
-  async listPackingRecords(_options?: { productId?: string; date?: string; limit?: number }): Promise<PackingRecord[]> {
-    return [];
+  async listPackingRecords(options?: { productId?: string; date?: string; limit?: number }): Promise<PackingRecord[]> {
+    let records = this.getItem<PackingRecord[]>('pb_packing_records', []);
+    if (options?.productId) {
+      records = records.filter((r) => r.productId === options.productId);
+    }
+    if (options?.date) {
+      records = records.filter((r) => r.packingDate === options.date);
+    }
+    if (options?.limit) {
+      records = records.slice(0, options.limit);
+    }
+    return records;
   }
 
-  async deletePackingRecordsForRun(_runId: string, _runNumber?: string): Promise<void> {}
+  async deletePackingRecordsForRun(runId: string, runNumber?: string): Promise<void> {
+    let records = this.getItem<PackingRecord[]>('pb_packing_records', []);
+    records = records.filter(
+      (r) =>
+        r.productionRunId !== runId &&
+        !(runNumber && r.notes && r.notes.includes(runNumber))
+    );
+    this.setItem('pb_packing_records', records);
+  }
 
 
   // ==============================================================================

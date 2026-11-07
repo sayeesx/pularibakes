@@ -56,7 +56,20 @@ export const BatchWeighingModal: React.FC<BatchWeighingModalProps> = ({
   const difference = Number((producedKg - planned).toFixed(2));
   const yieldPercent = planned > 0 ? Number(((producedKg / planned) * 100).toFixed(1)) : 100;
 
+  const isBatchCompleted = Boolean(batch.status === 'completed' && Number(batch.actualQuantity) > 0);
+
   const handleCommit = async (thenPack: boolean = false) => {
+    if (isBatchCompleted) {
+      addToast(
+        language === 'ml'
+          ? 'ബാച്ച് പൂർത്തിയായതിനാൽ ഉൽപ്പാദിപ്പിച്ച അളവ് ഇനി മാറ്റാനാകില്ല'
+          : 'Produced quantity cannot be edited once the batch is completed',
+        'warning'
+      );
+      onClose();
+      return;
+    }
+
     const finalKg = Number(producedKg.toFixed(2));
 
     if (finalKg <= 0) {
@@ -201,19 +214,30 @@ export const BatchWeighingModal: React.FC<BatchWeighingModalProps> = ({
 
         {/* Action Button: Save Weight */}
         <div className="pt-2">
-          <Button
-            type="button"
-            variant="primary"
-            onClick={() => handleCommit(false)}
-            isLoading={isSubmitting}
-            disabled={isSubmitting}
-            className="w-full font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-sm cursor-pointer press-apple"
-          >
-            <TbCheck className="w-5 h-5 stroke-[2.5]" />
-            <span className="font-malayalam">
-              {language === 'ml' ? 'സേവ് ചെയ്യുക' : 'Save Weight'}
-            </span>
-          </Button>
+          {isBatchCompleted ? (
+            <div className="w-full font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 bg-stone-100 dark:bg-[#1E1B1B] text-stone-500 dark:text-stone-400 border border-stone-200 dark:border-stone-800 select-none">
+              <TbCheck className="w-5 h-5 text-emerald-500 stroke-[3]" />
+              <span className="font-malayalam text-xs sm:text-sm">
+                {language === 'ml'
+                  ? 'ബാച്ച് പൂർത്തിയായി (അളവ് മാറ്റാനാകില്ല)'
+                  : 'Batch Completed (Quantity Locked)'}
+              </span>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => handleCommit(false)}
+              isLoading={isSubmitting}
+              disabled={isSubmitting}
+              className="w-full font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 shadow-sm cursor-pointer press-apple"
+            >
+              <TbCheck className="w-5 h-5 stroke-[2.5]" />
+              <span className="font-malayalam">
+                {language === 'ml' ? 'സേവ് ചെയ്യുക' : 'Save Weight'}
+              </span>
+            </Button>
+          )}
         </div>
       </div>
     </Modal>

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Modal } from '../ui/Modal';
-import { BatchSuccessAnimation } from '../ui/BatchSuccessAnimation';
 import { ProductionRun, Recipe, PackingRecord } from '../../types';
 import {
   TbPackage,
@@ -12,6 +11,7 @@ import {
   TbAlertCircle,
   TbScale,
   TbX,
+  TbPencil,
 } from 'react-icons/tb';
 
 interface BatchPackingModalProps {
@@ -34,6 +34,14 @@ export const DEFAULT_PACKET_SIZES = [
   '8 x 12 Packet',
 ] as const;
 
+export interface CatalogPacketInfo {
+  name: string;
+  costPerPacket: number;
+  availableStock?: number;
+  isOutOfStock: boolean;
+  packagingItemId?: string;
+}
+
 export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
   isOpen,
   onClose,
@@ -46,17 +54,18 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
 
   // Multi-packet quantities state: { [packetSize: string]: number }
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [showSuccessAnim, setShowSuccessAnim] = useState<boolean>(false);
+  const [isSavingPacket, setIsSavingPacket] = useState<boolean>(false);
 
-  // All catalog packets (cook can select any packet without restrictions)
-  const [catalogPackets, setCatalogPackets] = useState<Array<{ name: string; costPerPacket?: number }>>([]);
+  // All catalog packets with real stock info
+  const [catalogPackets, setCatalogPackets] = useState<CatalogPacketInfo[]>([]);
 
   // Active Ruler / Number input modal for a selected packet
   const [activeRulerPacket, setActiveRulerPacket] = useState<{
     size: string;
     count: number;
     costPerPacket?: number;
+    maxStock: number;
+    packagingItemId?: string;
   } | null>(null);
 
   // Ruler scrolling refs
@@ -83,74 +92,86 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
     }, 200);
   }, []);
 
-  // Load ALL in-stock packet types from catalogue (out-of-stock packets are hidden)
+  // Load ALL packet types from catalogue with stock levels (do NOT hide out-of-stock packets)
   useEffect(() => {
     Promise.all([
       repo.listPacketTypes(),
       repo.listPackagingItems ? repo.listPackagingItems() : Promise.resolve([]),
     ]).then(([types, packagingItems]) => {
-      let activeTypes = (types || []).filter((t) => t && t.isActive !== false);
+      const activeTypes = (types || []).filter((t) => t && t.isActive !== false);
+      const typesToUse = activeTypes.length > 0
+        ? activeTypes
+        : DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 }));
 
-      if (packagingItems && packagingItems.length > 0) {
-        const outOfStockNames = new Set(
-          packagingItems
-            .filter((p: any) => p && ((p.currentStock !== undefined && Number(p.currentStock) <= 0) || p.isActive === false))
-            .map((p: any) => (p.sizeLabel || p.name || '').trim().toLowerCase())
-            .filter(Boolean)
+      const packetList: CatalogPacketInfo[] = typesToUse.map((t) => {
+        const matchingPack = (packagingItems || []).find(
+          (p: any) =>
+            p &&
+            ((p.sizeLabel || p.name || '').trim().toLowerCase() === t.name.trim().toLowerCase())
         );
-        activeTypes = activeTypes.filter(
-          (t) => t && t.name && !outOfStockNames.has(t.name.trim().toLowerCase())
-        );
-      }
 
-      if (activeTypes.length > 0) {
-        setCatalogPackets(activeTypes.map((t) => ({ name: t.name, costPerPacket: t.costPerPacket })));
-      } else {
-        setCatalogPackets(DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 })));
-      }
+        const hasTrackedStock = Boolean(matchingPack && matchingPack.currentStock !== undefined);
+        const stock = hasTrackedStock ? Number(matchingPack.currentStock) : undefined;
+        const isOutOfStock = Boolean(
+          matchingPack &&
+            ((matchingPack.currentStock !== undefined && Number(matchingPack.currentStock) <= 0) ||
+              matchingPack.isActive === false)
+        );
+
+        return {
+          name: t.name,
+          costPerPacket: Number(t.costPerPacket) || 0,
+          availableStock: stock,
+          isOutOfStock,
+          packagingItemId: matchingPack?.id,
+        };
+      });
+
+      setCatalogPackets(packetList);
     }).catch(() => {
-      setCatalogPackets(DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 })));
+      setCatalogPackets(
+        DEFAULT_PACKET_SIZES.map((name) => ({
+          name,
+          costPerPacket: 0,
+          availableStock: undefined,
+          isOutOfStock: false,
+        }))
+      );
     });
   }, [repo]);
 
-  // Track whether we are adjusting already recorded packets
-  const [hasExistingRecords, setHasExistingRecords] = useState<boolean>(false);
-
-  // Load existing records for this batch (instantly from prop if available)
+  // Load existing records for this batch
   useEffect(() => {
     if (isOpen && batch) {
-      setShowSuccessAnim(false);
-      setIsSubmitting(false);
+      setIsSavingPacket(false);
       let isMounted = true;
       const initialMap: Record<string, number> = {};
 
       if (initialPackings && initialPackings.length > 0) {
         initialPackings.forEach((r) => {
           if ((r.packetsPacked || 0) > 0) {
-            initialMap[r.packetSize] = (initialMap[r.packetSize] || 0) + (r.packetsPacked || 0);
+            initialMap[r.packetSize] = Number(r.packetsPacked) || 0;
           }
         });
         setQuantities({ ...initialMap });
-        setHasExistingRecords(Object.keys(initialMap).length > 0);
       }
 
       repo.listPackingRecords({ productId: batch.productId, limit: 100 }).then((records) => {
         if (!isMounted) return;
+        const freshMap: Record<string, number> = {};
         records.forEach((r) => {
           const isThisBatch = r.productionRunId
             ? r.productionRunId === batch.id
             : Boolean(r.notes && r.notes.includes(batch.runNumber));
 
           if (isThisBatch && (r.packetsPacked || 0) > 0) {
-            initialMap[r.packetSize] = (initialMap[r.packetSize] || 0) + (r.packetsPacked || 0);
+            freshMap[r.packetSize] = Number(r.packetsPacked) || 0;
           }
         });
-        setQuantities({ ...initialMap });
-        setHasExistingRecords(Object.keys(initialMap).length > 0);
+        setQuantities(freshMap);
       }).catch(() => {
         if (isMounted && (!initialPackings || initialPackings.length === 0)) {
           setQuantities({});
-          setHasExistingRecords(false);
         }
       });
 
@@ -161,26 +182,52 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
     }
   }, [isOpen, batch, initialPackings, repo]);
 
-  // All in-stock packets shown directly to the cook (plus any packet already recorded on this batch):
+  // All packets shown directly to the cook (catalog packets + any already saved for this batch)
   const displayedPackets = useMemo(() => {
     const existingPacketNames = Object.keys(quantities).filter((k) => (quantities[k] || 0) > 0);
     const existingMissing = existingPacketNames
-      .filter((name) => Boolean(name) && !catalogPackets.some((cp) => (cp.name || '').toLowerCase() === name.toLowerCase()))
-      .map((name) => ({ name, costPerPacket: 0 }));
+      .filter((name) => Boolean(name) && !catalogPackets.some((cp) => cp.name.toLowerCase() === name.toLowerCase()))
+      .map((name) => ({
+        name,
+        costPerPacket: 0,
+        availableStock: undefined,
+        isOutOfStock: false,
+      }));
 
     return [...catalogPackets, ...existingMissing];
   }, [catalogPackets, quantities]);
 
-  // Open measurement modal instantly when selecting a packet
-  const handleOpenRulerForPacket = (size: string, costPerPacket?: number) => {
-    const currentVal = quantities[size] || 50;
+  // Open measurement modal for a selected packet
+  const handleOpenRulerForPacket = (pkt: CatalogPacketInfo) => {
+    if (pkt.isOutOfStock) {
+      addToast(
+        language === 'ml'
+          ? `${pkt.name} സ്റ്റോക്കിലില്ല (Out of Stock)`
+          : `${pkt.name} is out of stock`,
+        'warning'
+      );
+      return;
+    }
+
+    const currentSaved = quantities[pkt.name] || 0;
+    // Maximum allowable is available warehouse stock + whatever was already allocated to this batch
+    const maxStock =
+      pkt.availableStock !== undefined
+        ? Math.max(1, pkt.availableStock + currentSaved)
+        : MAX_RULER_PACKETS;
+
+    const initialCount = currentSaved > 0 ? currentSaved : Math.min(50, maxStock);
+
     setActiveRulerPacket({
-      size,
-      count: currentVal,
-      costPerPacket,
+      size: pkt.name,
+      count: initialCount,
+      costPerPacket: pkt.costPerPacket,
+      maxStock,
+      packagingItemId: pkt.packagingItemId,
     });
+
     setTimeout(() => {
-      scrollRulerTo(currentVal);
+      scrollRulerTo(initialCount);
     }, 120);
   };
 
@@ -188,52 +235,157 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
     if (!rulerRef.current || isScrollingRuler.current || !activeRulerPacket) return;
     const scrollLeft = rulerRef.current.scrollLeft;
     const tickIndex = Math.round(scrollLeft / TICK_SPACING);
+    const maxLimit = activeRulerPacket.maxStock;
     const calculatedVal = Math.max(
       MIN_PACKETS,
-      Math.min(MAX_RULER_PACKETS, MIN_PACKETS + tickIndex * STEP_PACKETS)
+      Math.min(maxLimit, MIN_PACKETS + tickIndex * STEP_PACKETS)
     );
     setActiveRulerPacket((prev) => (prev ? { ...prev, count: calculatedVal } : null));
   };
 
   const handleRulerStepDelta = (delta: number) => {
     if (!activeRulerPacket) return;
-    const next = Math.max(0, activeRulerPacket.count + delta);
+    const maxLimit = activeRulerPacket.maxStock;
+    const next = Math.max(0, Math.min(maxLimit, activeRulerPacket.count + delta));
     setActiveRulerPacket((prev) => (prev ? { ...prev, count: next } : null));
     scrollRulerTo(next);
   };
 
   const handleDirectCountChange = (valStr: string) => {
+    if (!activeRulerPacket) return;
+    const maxLimit = activeRulerPacket.maxStock;
     const val = parseInt(valStr, 10);
-    const count = isNaN(val) ? 0 : Math.max(0, Math.min(MAX_RULER_PACKETS, val));
+    const count = isNaN(val) ? 0 : Math.max(0, Math.min(maxLimit, val));
     setActiveRulerPacket((prev) => (prev ? { ...prev, count } : null));
     scrollRulerTo(count);
   };
 
-  const handleConfirmRulerValue = () => {
-    if (!activeRulerPacket) return;
-    if (activeRulerPacket.count > 0) {
-      setQuantities((prev) => ({
-        ...prev,
-        [activeRulerPacket.size]: activeRulerPacket.count,
-      }));
-    } else {
+  // Save selected packet to the batch immediately upon confirmation in the ruler modal
+  const handleConfirmRulerValue = async () => {
+    if (!activeRulerPacket || !batch) return;
+    const { size, count, costPerPacket, maxStock, packagingItemId } = activeRulerPacket;
+
+    // Prevent adding more packets than available stock
+    if (maxStock !== undefined && count > maxStock) {
+      addToast(
+        language === 'ml'
+          ? `പരമാവധി ലഭ്യമായ സ്റ്റോക്ക് ${maxStock} പാക്കറ്റുകളാണ്`
+          : `Cannot add more than available stock (${maxStock} pkts)`,
+        'warning'
+      );
+      return;
+    }
+
+    try {
+      setIsSavingPacket(true);
+      const packingDate = batch.productionDate || new Date().toISOString().split('T')[0];
+      const operatorName = staffName || batch.operatorName || 'Kitchen Staff';
+
+      // 1. Immediately save/update this specific packet on the batch (no duplicate rows)
+      await repo.recordPacking({
+        packingDate,
+        productId: batch.productId,
+        productionRunId: batch.id,
+        packagingItemId,
+        packetSize: size,
+        packetsPacked: count,
+        operatorName,
+        coverUnitCost: costPerPacket || 0,
+        notes: `Batch #${batch.runNumber}`,
+      });
+
+      // 2. Immediately update local state
       setQuantities((prev) => {
         const copy = { ...prev };
-        delete copy[activeRulerPacket.size];
+        if (count > 0) {
+          copy[size] = count;
+        } else {
+          delete copy[size];
+        }
         return copy;
       });
+
+      // 3. Update stock locally in catalogPackets
+      if (maxStock !== undefined) {
+        const prevCount = quantities[size] || 0;
+        const delta = count - prevCount;
+        setCatalogPackets((prev) =>
+          prev.map((cp) => {
+            if (cp.name.toLowerCase() === size.toLowerCase() && cp.availableStock !== undefined) {
+              const newAvail = Math.max(0, cp.availableStock - delta);
+              return {
+                ...cp,
+                availableStock: newAvail,
+                isOutOfStock: newAvail <= 0,
+              };
+            }
+            return cp;
+          })
+        );
+      }
+
+      addToast(
+        count > 0
+          ? language === 'ml'
+            ? `${size}: ${count} പാക്കറ്റുകൾ ബാച്ചിലേക്ക് സൂക്ഷിച്ചു`
+            : `${size}: ${count} packets saved to batch`
+          : language === 'ml'
+          ? `${size} ഒഴിവാക്കി`
+          : `${size} cleared`,
+        'success'
+      );
+
+      // 4. Automatic updates without refreshing: trigger refresh and notify parent
+      triggerRefresh();
+      if (onSuccess) onSuccess();
+
+      setActiveRulerPacket(null);
+    } catch (err: any) {
+      console.error('Failed to save packet:', err);
+      addToast(err?.message || 'Failed to save packet', 'error');
+    } finally {
+      setIsSavingPacket(false);
     }
-    setActiveRulerPacket(null);
   };
 
-  const handleClearRulerValue = () => {
-    if (!activeRulerPacket) return;
-    setQuantities((prev) => {
-      const updated = { ...prev };
-      delete updated[activeRulerPacket.size];
-      return updated;
-    });
-    setActiveRulerPacket(null);
+  // Clear packet value immediately
+  const handleClearRulerValue = async () => {
+    if (!activeRulerPacket || !batch) return;
+    const { size, packagingItemId, costPerPacket } = activeRulerPacket;
+
+    try {
+      setIsSavingPacket(true);
+      const packingDate = batch.productionDate || new Date().toISOString().split('T')[0];
+      const operatorName = staffName || batch.operatorName || 'Kitchen Staff';
+
+      await repo.recordPacking({
+        packingDate,
+        productId: batch.productId,
+        productionRunId: batch.id,
+        packagingItemId,
+        packetSize: size,
+        packetsPacked: 0,
+        operatorName,
+        coverUnitCost: costPerPacket || 0,
+        notes: `Batch #${batch.runNumber}`,
+      });
+
+      setQuantities((prev) => {
+        const copy = { ...prev };
+        delete copy[size];
+        return copy;
+      });
+
+      addToast(language === 'ml' ? `${size} ഒഴിവാക്കി` : `${size} cleared`, 'info');
+      triggerRefresh();
+      if (onSuccess) onSuccess();
+      setActiveRulerPacket(null);
+    } catch (err: any) {
+      console.error('Failed to clear packet:', err);
+      addToast(err?.message || 'Failed to clear packet', 'error');
+    } finally {
+      setIsSavingPacket(false);
+    }
   };
 
   // Calculations:
@@ -241,69 +393,9 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
   const totalPacketsSum = configuredPackets.reduce((sum, [_, qty]) => sum + qty, 0);
   const hasAddedPackets = configuredPackets.length > 0;
 
-  const handleSubmitAllPackets = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!batch) return;
-
-    try {
-      setIsSubmitting(true);
-      const packingDate = batch.productionDate || new Date().toISOString().split('T')[0];
-      const operatorName = staffName || batch.operatorName || 'Kitchen Staff';
-
-      // 1. Delete previous records for this run to keep calculations & DB strictly accurate
-      await repo.deletePackingRecordsForRun(batch.id, batch.runNumber);
-
-      // 2. Insert new confirmed quantities with explicit unit cost for costing accuracy (if > 0)
-      for (const [packetSize, count] of configuredPackets) {
-        if (count > 0) {
-          const pktInfo = displayedPackets.find(
-            (p) => p.name.toLowerCase() === packetSize.toLowerCase()
-          );
-          await repo.recordPacking({
-            packingDate,
-            productId: batch.productId,
-            productionRunId: batch.id,
-            packetSize,
-            packetsPacked: count,
-            operatorName,
-            coverUnitCost: pktInfo?.costPerPacket || 0,
-            notes: `Batch #${batch.runNumber}`,
-          });
-        }
-      }
-
-      setIsSubmitting(false);
-      setShowSuccessAnim(true);
-    } catch (err: any) {
-      console.error('Failed to record batch packaging', err);
-      addToast(err?.message || 'Failed to save packets', 'error');
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSuccessAnimComplete = () => {
-    setShowSuccessAnim(false);
-    if (!batch) return;
-    addToast(
-      language === 'ml'
-        ? totalPacketsSum === 0
-          ? `${batch.productName} പാക്കറ്റുകൾ 0 ആയി ക്രമീകരിച്ചു`
-          : hasExistingRecords
-          ? `${batch.productName} ലേക്ക് ${totalPacketsSum} പാക്കറ്റുകൾ ക്രമീകരിച്ചു`
-          : `${batch.productName} ലേക്ക് ${totalPacketsSum} പാക്കറ്റുകൾ ചേർത്തു`
-        : totalPacketsSum === 0
-        ? `Reset packets to 0 for ${batch.productName}`
-        : hasExistingRecords
-        ? `Adjusted ${totalPacketsSum} packets for ${batch.productName}`
-        : `Recorded ${totalPacketsSum} packets for ${batch.productName}`,
-      'success'
-    );
-    triggerRefresh();
-    if (onSuccess) onSuccess();
-    onClose();
-  };
-
-  const totalTicks = Math.min(MAX_RULER_PACKETS - MIN_PACKETS, 500);
+  const totalTicks = activeRulerPacket
+    ? Math.min(activeRulerPacket.maxStock - MIN_PACKETS, 500)
+    : 500;
 
   if (!isOpen || !batch) return null;
 
@@ -312,8 +404,6 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
       <Modal
         isOpen={isOpen && !activeRulerPacket}
         onClose={() => {
-          setShowSuccessAnim(false);
-          setIsSubmitting(false);
           onClose();
         }}
         title={
@@ -323,40 +413,21 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
             </span>
             <div>
               <h2 className="text-base sm:text-lg font-black text-stone-900 dark:text-white leading-tight font-malayalam">
-                {hasExistingRecords
-                  ? (language === 'ml' ? 'പാക്കറ്റുകൾ ക്രമീകരിക്കുക' : 'Adjust Packets')
-                  : (language === 'ml' ? 'പാക്കറ്റുകൾ ചേർക്കുക' : 'Add Packets')}
+                {hasAddedPackets
+                  ? language === 'ml'
+                    ? 'പാക്കറ്റുകൾ ചേർക്കുക / തിരുത്തുക'
+                    : 'Add / Edit Packets'
+                  : language === 'ml'
+                  ? 'പാക്കറ്റുകൾ ചേർക്കുക'
+                  : 'Add Packets'}
               </h2>
               <p className="text-xs text-stone-500 dark:text-stone-400 font-medium">
                 {batch.productName} ({batch.actualQuantity} {batch.unit})
-                {hasExistingRecords && (
-                  <span className="text-epso-orange dark:text-amber-400 font-bold ml-1.5 font-malayalam">
-                    • {language === 'ml' ? 'തിരുത്തൽ' : 'Edit Mode'}
-                  </span>
-                )}
               </p>
             </div>
           </div>
         }
         size="md"
-        overlay={
-          <BatchSuccessAnimation
-            isVisible={showSuccessAnim}
-            onComplete={handleSuccessAnimComplete}
-            message={
-              totalPacketsSum === 0
-                ? (language === 'ml' ? 'പാക്കറ്റുകൾ 0 ആയി മാറ്റി' : 'Packets Set to 0')
-                : (language === 'ml' ? 'പാക്കറ്റുകൾ ചേർത്തു!' : 'Packets Added Successfully!')
-            }
-            subMessage={
-              totalPacketsSum === 0
-                ? (language === 'ml' ? 'ഈ ബാച്ചിലെ എല്ലാ പാക്കറ്റുകളും ഒഴിവാക്കി' : 'All packets cleared for this batch')
-                : (language === 'ml'
-                    ? `${configuredPackets.length} തരങ്ങളിൽ ${totalPacketsSum} പാക്കറ്റുകൾ രേഖപ്പെടുത്തി`
-                    : `${totalPacketsSum} packets recorded across ${configuredPackets.length} packet types`)
-            }
-          />
-        }
       >
         <div className={`space-y-4 pb-28 -mx-1 ${activeRulerPacket ? 'hidden' : ''}`}>
           {/* Batch Info Card */}
@@ -375,7 +446,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
               </div>
             </div>
 
-            {/* Compulsory Status Badge */}
+            {/* Status Badge */}
             <div className="text-right shrink-0">
               <span
                 className={`text-[11px] font-black px-2.5 py-1 rounded-full border flex items-center gap-1 whitespace-nowrap shrink-0 ${
@@ -400,17 +471,17 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
             </div>
           </div>
 
-          {/* All Available Packets Grid (Cook can pick any packet) */}
+          {/* All Packets Grid */}
           <div className="p-4 rounded-3xl bg-white dark:bg-[#1E1B1B] border border-stone-200 dark:border-[#2E2828] shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam block">
-                  {language === 'ml' ? 'എല്ലാ പാക്കറ്റ് തരങ്ങളും (ഏതും തിരഞ്ഞെടുക്കാം)' : 'All Packet Types (Select Any)'}
+                  {language === 'ml' ? 'പാക്കറ്റ് തരങ്ങൾ' : 'Packet Types'}
                 </span>
                 <span className="text-[10px] text-stone-400 font-medium">
                   {language === 'ml'
-                    ? 'പാക്കറ്റുകൾ ചേർക്കൽ നിർബന്ധമാണ്. പരിധിയില്ലാതെ എത്രയും ചേർക്കാം.'
-                    : 'Adding packets is compulsory. Select any packet without limits.'}
+                    ? 'പാക്കറ്റുകൾ തിരഞ്ഞെടുത്ത് എണ്ണം നൽകുക. മാറ്റങ്ങൾ ഉടൻ സൂക്ഷിക്കപ്പെടും.'
+                    : 'Select a packet to add or adjust count. Saved immediately.'}
                 </span>
               </div>
               <span className="text-xs font-black text-stone-600 dark:text-stone-400 font-mono">
@@ -422,84 +493,110 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
               <div className="p-6 text-center rounded-2xl bg-stone-50 dark:bg-[#141212] border border-stone-200 dark:border-[#282323] space-y-1">
                 <TbAlertCircle className="w-7 h-7 mx-auto text-amber-500 mb-1 stroke-[1.8]" />
                 <h4 className="text-xs font-bold text-stone-700 dark:text-stone-300 font-malayalam">
-                  {language === 'ml' ? 'സ്റ്റോക്കിൽ പാക്കറ്റുകൾ ലഭ്യമല്ല' : 'No Packets in Stock'}
+                  {language === 'ml' ? 'പാക്കറ്റുകൾ ലഭ്യമല്ല' : 'No Packet Types Configured'}
                 </h4>
-                <p className="text-[11px] text-stone-400 font-malayalam">
-                  {language === 'ml'
-                    ? 'സ്റ്റോക്കില്ലാത്ത പാക്കറ്റുകൾ ഇവിടെ കാണിക്കുന്നില്ല'
-                    : 'Out of stock packets are hidden'}
-                </p>
               </div>
             ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              {displayedPackets.map((pkt) => {
-                const count = quantities[pkt.name] || 0;
-                const hasCount = count > 0;
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {displayedPackets.map((pkt) => {
+                  const count = quantities[pkt.name] || 0;
+                  const hasCount = count > 0;
+                  const isOut = pkt.isOutOfStock;
 
-                return (
-                  <div
-                    key={pkt.name}
-                    onClick={() => handleOpenRulerForPacket(pkt.name, pkt.costPerPacket)}
-                    className={`relative p-3.5 rounded-2xl border-2 transition-all press-apple cursor-pointer flex flex-col justify-between gap-2.5 select-none ${
-                      hasCount
-                        ? 'bg-orange-50/70 dark:bg-orange-950/20 border-epso-red dark:border-amber-500 shadow-sm'
-                        : 'bg-stone-50 dark:bg-[#141212] border-stone-200 dark:border-[#282323] hover:border-epso-red/50 dark:hover:border-amber-500/50'
-                    }`}
-                  >
-                    {/* Top status indicator */}
-                    <div className="flex items-center justify-between w-full">
-                      <span className="text-[10px] uppercase font-black tracking-wider text-stone-400 font-mono">
-                        Packet
-                      </span>
-
-                      {hasCount ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-epso-red dark:bg-amber-500 text-white dark:text-stone-950 font-black text-xs shadow-xs tracking-tight font-mono">
-                          <TbCheck className="w-3.5 h-3.5 stroke-[3]" />
-                          <span>{count} pkts</span>
+                  return (
+                    <div
+                      key={pkt.name}
+                      onClick={() => handleOpenRulerForPacket(pkt)}
+                      className={`relative p-3.5 rounded-2xl border-2 transition-all flex flex-col justify-between gap-2.5 select-none ${
+                        isOut
+                          ? 'bg-stone-100/60 dark:bg-[#151212] border-stone-200 dark:border-[#242020] opacity-70 cursor-not-allowed'
+                          : hasCount
+                          ? 'bg-orange-50/70 dark:bg-orange-950/20 border-epso-red dark:border-amber-500 shadow-sm cursor-pointer press-apple'
+                          : 'bg-stone-50 dark:bg-[#141212] border-stone-200 dark:border-[#282323] hover:border-epso-red/50 dark:hover:border-amber-500/50 cursor-pointer press-apple'
+                      }`}
+                    >
+                      {/* Top status indicator */}
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-[10px] uppercase font-black tracking-wider text-stone-400 font-mono">
+                          Packet
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-200/70 dark:bg-[#282323] text-stone-500 dark:text-stone-400 font-bold text-[10px]">
-                          <TbPlus className="w-3 h-3" />
-                          <span>{language === 'ml' ? 'നൽകുക' : 'Set Count'}</span>
-                        </span>
-                      )}
-                    </div>
 
-                    {/* Packet Name & Quick Info */}
-                    <div className="flex items-end justify-between gap-2">
-                      <div>
-                        <h4
-                          className={`text-base font-black tracking-tight ${
-                            hasCount
-                              ? 'text-epso-red dark:text-amber-400'
-                              : 'text-stone-900 dark:text-white'
-                          }`}
-                        >
-                          {pkt.name}
-                        </h4>
-                        {pkt.costPerPacket ? (
-                          <span className="text-[10px] text-stone-400 font-mono">
-                            ₹{Number(pkt.costPerPacket).toFixed(2)}/pkt
+                        {isOut ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 font-bold text-[10px] border border-red-200 dark:border-red-900/60">
+                            <TbAlertCircle className="w-3 h-3 text-red-500" />
+                            <span>{language === 'ml' ? 'സ്റ്റോക്കില്ല' : 'Out of Stock'}</span>
                           </span>
-                        ) : null}
+                        ) : hasCount ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-600 dark:bg-emerald-500 text-white dark:text-stone-950 font-black text-xs shadow-xs tracking-tight font-mono">
+                            <TbCheck className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>{count} pkts</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-200/70 dark:bg-[#282323] text-stone-500 dark:text-stone-400 font-bold text-[10px]">
+                            <TbPlus className="w-3 h-3" />
+                            <span>{language === 'ml' ? 'ചേർക്കുക' : 'Add'}</span>
+                          </span>
+                        )}
                       </div>
 
-                      <div className="text-right">
-                        <span
-                          className={`text-xs font-black font-mono px-2 py-1 rounded-lg ${
-                            hasCount
-                              ? 'bg-white dark:bg-[#1E1B1B] text-stone-900 dark:text-white border border-epso-red/30 dark:border-amber-500/30'
-                              : 'text-stone-400'
-                          }`}
-                        >
-                          {hasCount ? `${count} pkts` : '0 pkts'}
-                        </span>
+                      {/* Packet Name & Quick Info */}
+                      <div className="flex items-end justify-between gap-2">
+                        <div>
+                          <h4
+                            className={`text-base font-black tracking-tight ${
+                              isOut
+                                ? 'text-stone-400 dark:text-stone-500 line-through'
+                                : hasCount
+                                ? 'text-epso-red dark:text-amber-400'
+                                : 'text-stone-900 dark:text-white'
+                            }`}
+                          >
+                            {pkt.name}
+                          </h4>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {pkt.availableStock !== undefined ? (
+                              <span
+                                className={`text-[10px] font-bold font-mono ${
+                                  isOut
+                                    ? 'text-red-500 dark:text-red-400'
+                                    : 'text-emerald-600 dark:text-emerald-400'
+                                }`}
+                              >
+                                {isOut
+                                  ? (language === 'ml' ? 'സ്റ്റോക്ക്: 0' : 'Stock: 0')
+                                  : (language === 'ml' ? `സ്റ്റോക്ക്: ${pkt.availableStock}` : `Stock: ${pkt.availableStock}`)}
+                              </span>
+                            ) : null}
+
+                            {pkt.costPerPacket ? (
+                              <span className="text-[10px] text-stone-400 font-mono">
+                                ₹{Number(pkt.costPerPacket).toFixed(2)}/pkt
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          {hasCount ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-epso-red dark:text-amber-400 bg-white dark:bg-[#1E1B1B] px-2 py-0.5 rounded-lg border border-epso-red/30 dark:border-amber-500/30">
+                              <TbPencil className="w-3 h-3" />
+                              <span>{language === 'ml' ? 'തിരുത്തുക' : 'Edit'}</span>
+                            </span>
+                          ) : (
+                            <span
+                              className={`text-xs font-black font-mono px-2 py-1 rounded-lg ${
+                                isOut ? 'text-stone-300 dark:text-stone-600' : 'text-stone-400'
+                              }`}
+                            >
+                              0 pkts
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 
@@ -507,10 +604,11 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
           {hasAddedPackets && (
             <div className="p-3.5 bg-stone-100/80 dark:bg-[#252020]/80 rounded-2xl flex items-center justify-between text-xs">
               <span className="font-bold text-stone-600 dark:text-stone-300 font-malayalam">
-                {language === 'ml' ? 'ആകെ പാക്കറ്റുകൾ:' : 'Total Packets to Save:'}
+                {language === 'ml' ? 'ആകെ ചേർത്ത പാക്കറ്റുകൾ:' : 'Total Packets Saved:'}
               </span>
               <span className="font-black text-sm text-stone-900 dark:text-white font-mono">
-                {totalPacketsSum} {language === 'ml' ? 'പാക്കറ്റുകൾ' : 'Packets'} ({configuredPackets.length} {language === 'ml' ? 'തരങ്ങൾ' : 'types'})
+                {totalPacketsSum} {language === 'ml' ? 'പാക്കറ്റുകൾ' : 'Packets'} ({configuredPackets.length}{' '}
+                {language === 'ml' ? 'തരങ്ങൾ' : 'types'})
               </span>
             </div>
           )}
@@ -521,40 +619,37 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting}
             className="flex-1 py-3.5 sm:py-4 px-4 rounded-2xl border-2 border-stone-300 dark:border-stone-700 bg-white dark:bg-[#252020] hover:bg-stone-100 dark:hover:bg-[#2c2626] text-stone-800 dark:text-stone-200 font-extrabold text-sm transition-all press-apple cursor-pointer flex items-center justify-center gap-1.5"
           >
             <TbX className="w-4 h-4 stroke-[2.5]" />
-            <span>{language === 'ml' ? 'റദ്ദാക്കുക' : 'Cancel'}</span>
+            <span>{language === 'ml' ? 'അടയ്ക്കുക' : 'Close'}</span>
           </button>
 
-          {/* SAVE / UPDATE PACKETS BUTTON: Packets can be set to 0, and adjusted once set */}
           <button
             type="button"
-            onClick={() => handleSubmitAllPackets()}
-            disabled={isSubmitting}
-            className="flex-[2] py-3.5 sm:py-4 px-4 rounded-2xl font-black text-sm shadow-md transition-all press-apple cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed bg-epso-red hover:bg-epso-red-hover dark:bg-amber-500 dark:hover:bg-amber-600 text-white dark:text-stone-950"
+            onClick={() => {
+              triggerRefresh();
+              if (onSuccess) onSuccess();
+              onClose();
+            }}
+            className="flex-[2] py-3.5 sm:py-4 px-4 rounded-2xl font-black text-sm shadow-md transition-all press-apple cursor-pointer flex items-center justify-center gap-2 bg-epso-red hover:bg-epso-red-hover dark:bg-amber-500 dark:hover:bg-amber-600 text-white dark:text-stone-950"
           >
-            {isSubmitting ? (
-              <span>{language === 'ml' ? 'സൂക്ഷിക്കുന്നു...' : 'Saving...'}</span>
-            ) : (
-              <>
-                <TbCheck className="w-5 h-5 stroke-[3]" />
-                <span>
-                  {totalPacketsSum === 0
-                    ? (language === 'ml' ? 'സൂക്ഷിക്കുക (0 പാക്കറ്റുകൾ)' : 'Save (0 Packets)')
-                    : hasExistingRecords
-                    ? (language === 'ml' ? `മാറ്റങ്ങൾ സൂക്ഷിക്കുക (${totalPacketsSum} പാക്കറ്റുകൾ)` : `Update (${totalPacketsSum} Packets)`)
-                    : (language === 'ml' ? `സൂക്ഷിക്കുക (${totalPacketsSum} പാക്കറ്റുകൾ)` : `Save (${totalPacketsSum} Packets)`)}
-                </span>
-              </>
-            )}
+            <TbCheck className="w-5 h-5 stroke-[3]" />
+            <span>
+              {totalPacketsSum > 0
+                ? language === 'ml'
+                  ? `പൂർത്തിയായി (${totalPacketsSum} പാക്കറ്റുകൾ)`
+                  : `Done (${totalPacketsSum} Packets)`
+                : language === 'ml'
+                ? 'പൂർത്തിയായി'
+                : 'Done'}
+            </span>
           </button>
         </div>
       </Modal>
 
       {/* =================================================================== */}
-      {/* RULER & DIRECT INPUT MODAL FOR SELECTED PACKET (NO LIMITS)          */}
+      {/* RULER & DIRECT INPUT MODAL FOR SELECTED PACKET (WITH STOCK LIMITS)  */}
       {/* =================================================================== */}
       {activeRulerPacket && (
         <Modal
@@ -570,9 +665,13 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
                   {activeRulerPacket.size}
                 </h3>
                 <p className="text-xs text-stone-500 dark:text-stone-400 font-medium">
-                  {language === 'ml'
-                    ? 'പാക്കറ്റുകളുടെ എണ്ണം നൽകുക (പരിധിയില്ല)'
-                    : 'Enter Packet Count (No Limits)'}
+                  {activeRulerPacket.maxStock < MAX_RULER_PACKETS
+                    ? language === 'ml'
+                      ? `ലഭ്യമായ പരമാവധി സ്റ്റോക്ക്: ${activeRulerPacket.maxStock}`
+                      : `Max Available Stock: ${activeRulerPacket.maxStock}`
+                    : language === 'ml'
+                    ? 'പാക്കറ്റുകളുടെ എണ്ണം നൽകുക'
+                    : 'Enter Packet Count'}
                 </p>
               </div>
             </div>
@@ -580,7 +679,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
           size="md"
         >
           <div className="space-y-4 py-2 font-malayalam">
-            {/* Direct Number Input + Steppers (No Limits) */}
+            {/* Direct Number Input + Steppers (Bounded by available stock) */}
             <div className="flex items-center justify-center gap-2 py-1">
               <button
                 type="button"
@@ -598,11 +697,12 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
                 <TbMinus className="w-4 h-4 stroke-[2.5]" />
               </button>
 
-              {/* Editable Input Box for Any Count */}
+              {/* Editable Input Box for Count, clamped to available stock */}
               <div className="w-44 shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-2xl bg-stone-100 dark:bg-[#141212] border-2 border-epso-red/40 dark:border-amber-500/40 shadow-inner">
                 <input
                   type="number"
                   min="0"
+                  max={activeRulerPacket.maxStock}
                   step="1"
                   value={activeRulerPacket.count === 0 ? '' : activeRulerPacket.count}
                   onChange={(e) => handleDirectCountChange(e.target.value)}
@@ -618,14 +718,16 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleRulerStepDelta(1)}
-                className="w-11 h-11 shrink-0 rounded-2xl bg-stone-100 dark:bg-[#282323] hover:bg-stone-200 dark:hover:bg-[#342D2D] text-stone-700 dark:text-stone-200 flex items-center justify-center font-bold text-xs press-apple transition-colors cursor-pointer"
+                disabled={activeRulerPacket.count >= activeRulerPacket.maxStock}
+                className="w-11 h-11 shrink-0 rounded-2xl bg-stone-100 dark:bg-[#282323] hover:bg-stone-200 dark:hover:bg-[#342D2D] text-stone-700 dark:text-stone-200 flex items-center justify-center font-bold text-xs press-apple transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <TbPlus className="w-4 h-4 stroke-[2.5]" />
               </button>
               <button
                 type="button"
                 onClick={() => handleRulerStepDelta(10)}
-                className="w-11 h-11 shrink-0 rounded-2xl bg-stone-100 dark:bg-[#282323] hover:bg-stone-200 dark:hover:bg-[#342D2D] text-stone-700 dark:text-stone-200 flex items-center justify-center font-bold text-xs press-apple transition-colors cursor-pointer"
+                disabled={activeRulerPacket.count >= activeRulerPacket.maxStock}
+                className="w-11 h-11 shrink-0 rounded-2xl bg-stone-100 dark:bg-[#282323] hover:bg-stone-200 dark:hover:bg-[#342D2D] text-stone-700 dark:text-stone-200 flex items-center justify-center font-bold text-xs press-apple transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 title="+10"
               >
                 +10
@@ -657,8 +759,9 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
                       <div
                         key={idx}
                         onClick={() => {
-                          setActiveRulerPacket((prev) => (prev ? { ...prev, count: val } : null));
-                          scrollRulerTo(val);
+                          const clamped = Math.min(activeRulerPacket.maxStock, val);
+                          setActiveRulerPacket((prev) => (prev ? { ...prev, count: clamped } : null));
+                          scrollRulerTo(clamped);
                         }}
                         className="flex flex-col items-center justify-end shrink-0 cursor-pointer h-10 pb-1"
                         style={{ width: '2px' }}
@@ -684,34 +787,50 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
               <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-stone-50 dark:from-[#141212] to-transparent pointer-events-none z-10" />
             </div>
 
-            {/* Quick Presets (Extending to large counts) */}
+            {/* Quick Presets (Clamped to max stock) */}
             <div className="flex items-center justify-center gap-1.5 pt-0.5 flex-wrap">
               <span className="text-[10px] text-stone-400 font-bold mr-1">Quick:</span>
-              {[0, 25, 50, 75, 100, 150, 200, 250, 500, 1000].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => {
-                    setActiveRulerPacket((prev) => (prev ? { ...prev, count: preset } : null));
-                    scrollRulerTo(preset);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
-                    activeRulerPacket.count === preset
-                      ? 'bg-epso-red text-white border-epso-red dark:bg-amber-500 dark:text-stone-950 dark:border-amber-500'
-                      : 'bg-white dark:bg-[#141212] border-charcoal-border/70 dark:border-[#2E2828] text-stone-600 dark:text-stone-300 hover:text-epso-red'
-                  }`}
-                >
-                  {preset}
-                </button>
-              ))}
+              {[0, 25, 50, 75, 100, 150, 200, 250, 500, 1000]
+                .filter((preset) => preset === 0 || preset <= activeRulerPacket.maxStock)
+                .map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      const clamped = Math.min(activeRulerPacket.maxStock, preset);
+                      setActiveRulerPacket((prev) => (prev ? { ...prev, count: clamped } : null));
+                      scrollRulerTo(clamped);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                      activeRulerPacket.count === preset
+                        ? 'bg-epso-red text-white border-epso-red dark:bg-amber-500 dark:text-stone-950 dark:border-amber-500'
+                        : 'bg-white dark:bg-[#141212] border-charcoal-border/70 dark:border-[#2E2828] text-stone-600 dark:text-stone-300 hover:text-epso-red'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
             </div>
+
+            {/* Stock Limit Warning if near or at max */}
+            {activeRulerPacket.maxStock < MAX_RULER_PACKETS && (
+              <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex items-center justify-between text-[11px]">
+                <span className="text-amber-800 dark:text-amber-300 font-medium font-malayalam">
+                  {language === 'ml' ? 'ലഭ്യമായ സ്റ്റോക്ക് പരിധി:' : 'Available stock limit:'}
+                </span>
+                <span className="font-bold text-amber-900 dark:text-amber-200 font-mono">
+                  {activeRulerPacket.maxStock} pkts
+                </span>
+              </div>
+            )}
 
             {/* Ruler Dialog Actions */}
             <div className="flex items-center gap-2 pt-3 border-t border-stone-200 dark:border-[#2E2828]">
               <button
                 type="button"
                 onClick={handleClearRulerValue}
-                className="py-3 px-4 rounded-xl border border-stone-300 dark:border-stone-700 text-stone-600 dark:text-stone-400 font-bold text-xs hover:bg-stone-100 dark:hover:bg-[#282323] cursor-pointer"
+                disabled={isSavingPacket}
+                className="py-3 px-4 rounded-xl border border-stone-300 dark:border-stone-700 text-stone-600 dark:text-stone-400 font-bold text-xs hover:bg-stone-100 dark:hover:bg-[#282323] cursor-pointer disabled:opacity-50"
               >
                 {language === 'ml' ? 'ഒഴിവാക്കുക' : 'Clear'}
               </button>
@@ -719,7 +838,8 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveRulerPacket(null)}
-                className="flex-1 py-3 px-4 rounded-xl border-2 border-stone-300 dark:border-stone-700 bg-white dark:bg-[#252020] text-stone-800 dark:text-stone-200 font-extrabold text-xs cursor-pointer text-center"
+                disabled={isSavingPacket}
+                className="flex-1 py-3 px-4 rounded-xl border-2 border-stone-300 dark:border-stone-700 bg-white dark:bg-[#252020] text-stone-800 dark:text-stone-200 font-extrabold text-xs cursor-pointer text-center disabled:opacity-50"
               >
                 {language === 'ml' ? 'റദ്ദാക്കുക' : 'Cancel'}
               </button>
@@ -727,10 +847,17 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmRulerValue}
-                className="flex-1 py-3 px-4 rounded-xl bg-epso-red hover:bg-epso-red-hover dark:bg-amber-500 dark:hover:bg-amber-600 text-white dark:text-stone-950 font-black text-xs shadow-md press-apple cursor-pointer flex items-center justify-center gap-1.5"
+                disabled={isSavingPacket}
+                className="flex-1 py-3 px-4 rounded-xl bg-epso-red hover:bg-epso-red-hover dark:bg-amber-500 dark:hover:bg-amber-600 text-white dark:text-stone-950 font-black text-xs shadow-md press-apple cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
-                <TbCheck className="w-4 h-4 stroke-[3]" />
-                <span>{language === 'ml' ? 'സ്ഥിരീകരിക്കുക' : 'Done'}</span>
+                {isSavingPacket ? (
+                  <span>{language === 'ml' ? 'സൂക്ഷിക്കുന്നു...' : 'Saving...'}</span>
+                ) : (
+                  <>
+                    <TbCheck className="w-4 h-4 stroke-[3]" />
+                    <span>{language === 'ml' ? 'സൂക്ഷിക്കുക' : 'Save'}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -736,7 +736,6 @@ export async function deleteProductionRun(
     .from('production_runs')
     .select(`
       id,
-      run_number,
       product_id,
       actual_quantity,
       unit,
@@ -1554,7 +1553,7 @@ export async function savePackagingItem(item: Partial<PackagingItem> & { product
       .from('packaging_items')
       .update(payload)
       .eq('id', item.id)
-      .select('*, products(name)')
+      .select('*')
       .single();
 
     if (error) throw error;
@@ -1573,7 +1572,7 @@ export async function savePackagingItem(item: Partial<PackagingItem> & { product
     const { data, error } = await supabase
       .from('packaging_items')
       .insert({ ...payload, created_at: new Date().toISOString() })
-      .select('*, products(name)')
+      .select('*')
       .single();
 
     if (error) throw error;
@@ -1603,7 +1602,7 @@ export async function adjustPackagingItemStock(
 ): Promise<PackagingItem> {
   const { data: item, error: fetchErr } = await supabase
     .from('packaging_items')
-    .select('*, products(name)')
+    .select('*')
     .eq('id', id)
     .single();
 
@@ -1619,7 +1618,7 @@ export async function adjustPackagingItemStock(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .select('*, products(name)')
+    .select('*')
     .single();
 
   if (error) throw error;
@@ -1762,7 +1761,7 @@ export async function recordPacking(params: {
       notes: notes || null,
       created_at: new Date().toISOString(),
     })
-    .select('*, products(name)')
+    .select('*')
     .single();
 
   if (error) throw error;

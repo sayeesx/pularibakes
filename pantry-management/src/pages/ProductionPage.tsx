@@ -437,7 +437,7 @@ export const ProductionPage: React.FC = () => {
   const batchNumberMap = useMemo(() => {
     const map = new Map<string, number>();
     const byDate: Record<string, ProductionRun[]> = {};
-    runs.forEach((r) => {
+    runs.filter((r) => r.status !== 'cancelled').forEach((r) => {
       const d = r.productionDate || 'default';
       if (!byDate[d]) byDate[d] = [];
       byDate[d].push(r);
@@ -1088,6 +1088,29 @@ export const ProductionPage: React.FC = () => {
                           {/* 2. Weigh Produced KG (Weighing Scale) & Set Production Quantity Display */}
                           {(() => {
                             const isProducedMissing = !run.actualQuantity || run.actualQuantity <= 0;
+                            const isCompleted = isBatchCompleted || run.status === 'completed';
+
+                            // Once produced quantity is set and batch is completed, prevent further edits
+                            if (isCompleted && !isProducedMissing) {
+                              return (
+                                <div
+                                  className="relative h-11 sm:h-12 px-3 sm:px-3.5 rounded-xl flex items-center gap-2 font-bold text-xs bg-stone-100/90 dark:bg-[#1E1B1B] text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-800 shadow-2xs shrink-0 select-none cursor-default"
+                                  title={
+                                    language === 'ml'
+                                      ? 'ബാച്ച് പൂർത്തിയായി (ഉൽപ്പാദിപ്പിച്ച അളവ് ഇനി മാറ്റാനാകില്ല)'
+                                      : 'Batch completed (Produced quantity cannot be edited)'
+                                  }
+                                  aria-label="Produced Quantity Locked"
+                                >
+                                  <TbScale className="w-5 h-5 stroke-[2.2] text-stone-400 dark:text-stone-500 shrink-0" />
+                                  <span className="font-mono text-sm font-black whitespace-nowrap text-stone-900 dark:text-white">
+                                    {run.actualQuantity} {run.unit}
+                                  </span>
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 shadow-xs" title="Completed" />
+                                </div>
+                              );
+                            }
+
                             return (
                               <button
                                 type="button"
@@ -1147,19 +1170,8 @@ export const ProductionPage: React.FC = () => {
                             </button>
                           )}
 
-                          {/* 4. Delete Batch Icon Box: Grey & disabled if batch is completed, red & clickable otherwise */}
-                          {isAllPacketsAdded || hasPackedPackets ? (
-                            <button
-                              type="button"
-                              disabled
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-stone-100 dark:bg-[#1E1B1B] text-stone-300 dark:text-stone-600 border border-stone-200 dark:border-stone-800 flex items-center justify-center cursor-not-allowed select-none shrink-0"
-                              title={language === 'ml' ? 'പൂർത്തിയായ ബാച്ച് ഒഴിവാക്കാനാകില്ല' : 'Completed batch cannot be deleted'}
-                              aria-label="Delete Batch Disabled"
-                            >
-                              <TbTrash className="w-5 h-5 stroke-[2.2]" />
-                            </button>
-                          ) : (
+
+
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1173,7 +1185,6 @@ export const ProductionPage: React.FC = () => {
                             >
                               <TbTrash className="w-5 h-5 stroke-[2.2]" />
                             </button>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1415,7 +1426,13 @@ export const ProductionPage: React.FC = () => {
             : []
         }
         onClose={() => setBatchForPacking(null)}
-        onSuccess={() => {
+        onSuccess={async () => {
+          try {
+            const freshPackings = await repo.listPackingRecords({ limit: 100 });
+            if (freshPackings) setPackingRecords(freshPackings);
+          } catch (e) {
+            console.error('Failed to update live packing records:', e);
+          }
           triggerRefresh();
         }}
       />
