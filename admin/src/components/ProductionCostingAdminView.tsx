@@ -13,6 +13,8 @@ import {
   fetchProductSellingPrices,
   saveProductSellingPrice,
   fetchStockMovements,
+  fetchProductionRuns,
+  fetchProducts,
 } from '../services/supabase';
 import { roundCurrency, roundStock, isBasicIngredientName } from '../services/costing';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -82,7 +84,7 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
     const dates = Array.from(
       new Set(
         productionRuns
-          .filter((r) => r.status === 'completed' && r.productionDate)
+          .filter((r) => (r.status === 'completed' || (r.status !== 'cancelled' && Number(r.actualQuantity) > 0)) && r.productionDate)
           .map((r) => r.productionDate)
       )
     ).sort().reverse();
@@ -120,14 +122,19 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
     setIsLoading(true);
     try {
       // 1. Fetch all needed data in parallel (auto-fetched)
-      const [closings, allPackingRecords, wageList, pricesData, packetTypesList, fetchedMovements] = await Promise.all([
+      const [closings, allPackingRecords, wageList, pricesData, packetTypesList, fetchedMovements, freshRuns, freshProds] = await Promise.all([
         fetchDailyClosings(90),
         fetchPackingRecords({ limit: 500 }),
         fetchDailyWages(90),
         fetchProductSellingPrices(),
         fetchPacketTypes().catch(() => []),
         fetchStockMovements(false).catch(() => []),
+        fetchProductionRuns(true).catch(() => productionRuns),
+        fetchProducts(true).catch(() => products),
       ]);
+
+      const runsToUse = freshRuns && freshRuns.length > 0 ? freshRuns : productionRuns;
+      const prodsToUse = freshProds && freshProds.length > 0 ? freshProds : products;
 
       const movements = (stockMovements && stockMovements.length > 0) ? stockMovements : (fetchedMovements || []);
 
@@ -202,22 +209,19 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
       }
       setClosingDataMap(closingMap);
 
-      // Completed runs
-      const completedRuns = productionRuns.filter((r) => r.status === 'completed');
+      // Completed runs: status is 'completed' or batch has positive actualQuantity and is not cancelled
+      const completedRuns = runsToUse.filter(
+        (r) => (r.status === 'completed' || (r.status !== 'cancelled' && Number(r.actualQuantity) > 0))
+      );
 
       // 2. Compute costing for ALL products in catalog
       const summaries: ProductCostSummary[] = [];
 
-      for (const prod of products) {
+      for (const prod of prodsToUse) {
         let pRuns = completedRuns.filter((r) => r.productId === prod.id);
 
         if (dateFilter !== 'all') {
-          const dateRuns = pRuns.filter((r) => r.productionDate === dateFilter);
-          if (dateRuns.length > 0) {
-            pRuns = dateRuns;
-          } else {
-            pRuns = [];
-          }
+          pRuns = pRuns.filter((r) => r.productionDate === dateFilter);
         }
 
         const totalKg = pRuns.reduce((sum, r) => sum + (r.actualQuantity || 0), 0);
@@ -363,7 +367,7 @@ export const ProductionCostingAdminView: React.FC<ProductionCostingAdminViewProp
     const runs = productionRuns.filter(
       (r) =>
         r.productId === productId &&
-        r.status === 'completed' &&
+        (r.status === 'completed' || (r.status !== 'cancelled' && Number(r.actualQuantity) > 0)) &&
         (selectedDate === 'all' || r.productionDate === selectedDate)
     );
 

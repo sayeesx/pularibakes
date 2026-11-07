@@ -179,9 +179,18 @@ export const WagesAdminView: React.FC<WagesAdminViewProps> = ({
         notes: notes.trim() || undefined,
       });
 
-      await loadDateData(selectedDate);
-      onRefresh();
       showToast('കൂലി വിവരങ്ങൾ വിജയകരമായി സേവ് ചെയ്തു!', 'success');
+
+      try {
+        await loadDateData(selectedDate);
+      } catch (loadErr) {
+        console.warn('Background reload notice:', loadErr);
+      }
+      try {
+        onRefresh();
+      } catch (refErr) {
+        console.warn('Parent refresh notice:', refErr);
+      }
     } catch (err: any) {
       showToast(`സേവ് ചെയ്യുന്നതിൽ പിഴവ്: ${err?.message || 'അജ്ഞാത പിഴവ്'}`, 'error');
     } finally {

@@ -1027,7 +1027,7 @@ export class SupabaseRepository implements IEpsoRepository {
             plannedQuantity: Number(row.planned_quantity ?? row.target_quantity ?? 0),
             actualQuantity: Number(row.actual_quantity || 0),
             unit: row.unit || 'kg',
-            status: row.status,
+            status: row.status || (Number(row.actual_quantity) > 0 ? 'completed' : 'in_progress'),
             cancellationReason: row.cancellation_reason || undefined,
             cancelledAt: row.cancelled_at || undefined,
             cancelledBy: row.cancelled_by || undefined,
@@ -1343,6 +1343,10 @@ export class SupabaseRepository implements IEpsoRepository {
       actual_quantity: params.actualQuantity,
       updated_at: now,
     };
+    if (params.actualQuantity > 0) {
+      updatePayload.status = 'completed';
+      updatePayload.end_time = now;
+    }
     if (params.plannedQuantity !== undefined) updatePayload.target_quantity = params.plannedQuantity;
     if (params.productionDate) {
       updatePayload.start_time = params.productionDate.includes('T')
@@ -2115,17 +2119,17 @@ export class SupabaseRepository implements IEpsoRepository {
     }
   }
 
-  async savePackagingItem(item: Partial<PackagingItem> & { productId: string; sizeLabel: string }): Promise<PackagingItem> {
+  async savePackagingItem(item: Partial<PackagingItem> & { productId?: string; sizeLabel?: string; name?: string }): Promise<PackagingItem> {
     const client = this.checkClient();
+    const packetName = (item.sizeLabel || item.name || '').trim();
     const payload = {
-      product_id: item.productId,
-      size_label: item.sizeLabel.trim(),
-      size_grams: item.sizeGrams ?? 100,
-      current_stock: item.currentStock ?? 0,
-      unit_cost: item.unitCost ?? 0,
-      packing_labour_rate: item.packingLabourRate ?? 1.0,
+      name: packetName,
+      type: 'packet',
+      unit: 'pcs',
+      current_stock: item.currentStock !== undefined ? Number(item.currentStock) : 0,
+      cost_per_unit: item.unitCost !== undefined ? Number(item.unitCost) : 0,
+      min_stock: (item as any).minStock !== undefined ? Number((item as any).minStock) : 0,
       is_active: item.isActive ?? true,
-      updated_at: new Date().toISOString(),
     };
 
     if (item.id) {
@@ -2133,39 +2137,39 @@ export class SupabaseRepository implements IEpsoRepository {
         .from('packaging_items')
         .update(payload)
         .eq('id', item.id)
-        .select('*, products(name)')
+        .select('*')
         .single();
 
       if (error) throw new Error(error.message);
       return {
         id: data.id,
-        productId: data.product_id,
-        productName: data.products?.name || '',
-        sizeLabel: data.size_label,
-        sizeGrams: Number(data.size_grams),
-        currentStock: Number(data.current_stock),
-        unitCost: Number(data.unit_cost),
-        packingLabourRate: Number(data.packing_labour_rate),
-        isActive: data.is_active,
+        productId: '',
+        productName: data.name,
+        sizeLabel: data.name,
+        sizeGrams: 100,
+        currentStock: Number(data.current_stock) || 0,
+        unitCost: Number(data.cost_per_unit) || 0,
+        packingLabourRate: 1.0,
+        isActive: data.is_active ?? true,
       };
     } else {
       const { data, error } = await client
         .from('packaging_items')
         .insert({ ...payload, created_at: new Date().toISOString() })
-        .select('*, products(name)')
+        .select('*')
         .single();
 
       if (error) throw new Error(error.message);
       return {
         id: data.id,
-        productId: data.product_id,
-        productName: data.products?.name || '',
-        sizeLabel: data.size_label,
-        sizeGrams: Number(data.size_grams),
-        currentStock: Number(data.current_stock),
-        unitCost: Number(data.unit_cost),
-        packingLabourRate: Number(data.packing_labour_rate),
-        isActive: data.is_active,
+        productId: '',
+        productName: data.name,
+        sizeLabel: data.name,
+        sizeGrams: 100,
+        currentStock: Number(data.current_stock) || 0,
+        unitCost: Number(data.cost_per_unit) || 0,
+        packingLabourRate: 1.0,
+        isActive: data.is_active ?? true,
       };
     }
   }
@@ -2361,12 +2365,25 @@ export class SupabaseRepository implements IEpsoRepository {
     const stockDelta = packetsPacked - prevPacked;
 
     // 3. Update packaging_items inventory & stock movements (if tracked)
-    if (packagingItemId && stockDelta !== 0) {
+    let targetPackagingId = packagingItemId;
+    if (!targetPackagingId) {
+      try {
+        const { data: pFind } = await client
+          .from('packaging_items')
+          .select('id')
+          .ilike('name', packetSize.trim())
+          .limit(1)
+          .maybeSingle();
+        if (pFind?.id) targetPackagingId = pFind.id;
+      } catch {}
+    }
+
+    if (targetPackagingId && stockDelta !== 0) {
       try {
         const { data: packItem } = await client
           .from('packaging_items')
           .select('*')
-          .eq('id', packagingItemId)
+          .eq('id', targetPackagingId)
           .maybeSingle();
 
         if (packItem) {
@@ -2378,11 +2395,11 @@ export class SupabaseRepository implements IEpsoRepository {
 
           await client
             .from('packaging_items')
-            .update({ current_stock: newStock, updated_at: new Date().toISOString() })
-            .eq('id', packagingItemId);
+            .update({ current_stock: newStock })
+            .eq('id', targetPackagingId);
 
           await client.from('stock_movements').insert({
-            item_id: packagingItemId,
+            item_id: targetPackagingId,
             item_type: 'ingredient',
             movement_type: 'production_consumption',
             quantity: -stockDelta,

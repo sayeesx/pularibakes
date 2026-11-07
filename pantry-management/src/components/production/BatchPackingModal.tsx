@@ -104,18 +104,20 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
         : DEFAULT_PACKET_SIZES.map((name) => ({ name, costPerPacket: 0 }));
 
       const packetList: CatalogPacketInfo[] = typesToUse.map((t) => {
-        const matchingPack = (packagingItems || []).find(
-          (p: any) =>
-            p &&
-            ((p.sizeLabel || p.name || '').trim().toLowerCase() === t.name.trim().toLowerCase())
-        );
+        const tNameLower = t.name.trim().toLowerCase();
+        const matchingPack = (packagingItems || []).find((p: any) => {
+          if (!p) return false;
+          const pNameLower = (p.sizeLabel || p.name || '').trim().toLowerCase();
+          return (
+            pNameLower === tNameLower ||
+            pNameLower.replace(/\s+/g, '') === tNameLower.replace(/\s+/g, '')
+          );
+        });
 
-        const hasTrackedStock = Boolean(matchingPack && matchingPack.currentStock !== undefined);
         const stock = matchingPack && matchingPack.currentStock !== undefined ? Number(matchingPack.currentStock) : undefined;
         const isOutOfStock = Boolean(
           matchingPack &&
-            ((matchingPack.currentStock !== undefined && Number(matchingPack.currentStock) <= 0) ||
-              matchingPack.isActive === false)
+            ((stock !== undefined && stock <= 0) || matchingPack.isActive === false)
         );
 
         return {
@@ -199,7 +201,10 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
 
   // Open measurement modal for a selected packet
   const handleOpenRulerForPacket = (pkt: CatalogPacketInfo) => {
-    if (pkt.isOutOfStock) {
+    const currentSaved = quantities[pkt.name] || 0;
+    const isOut = pkt.isOutOfStock || (pkt.availableStock !== undefined && pkt.availableStock <= 0);
+
+    if (isOut && currentSaved <= 0) {
       addToast(
         language === 'ml'
           ? `${pkt.name} സ്റ്റോക്കിലില്ല (Out of Stock)`
@@ -209,14 +214,23 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
       return;
     }
 
-    const currentSaved = quantities[pkt.name] || 0;
     // Maximum allowable is available warehouse stock + whatever was already allocated to this batch
     const maxStock =
       pkt.availableStock !== undefined
-        ? Math.max(1, pkt.availableStock + currentSaved)
+        ? Math.max(0, pkt.availableStock + currentSaved)
         : MAX_RULER_PACKETS;
 
-    const initialCount = currentSaved > 0 ? currentSaved : Math.min(50, maxStock);
+    if (maxStock <= 0 && currentSaved <= 0) {
+      addToast(
+        language === 'ml'
+          ? `${pkt.name} സ്റ്റോക്കിലില്ല (Out of Stock)`
+          : `${pkt.name} is out of stock`,
+        'warning'
+      );
+      return;
+    }
+
+    const initialCount = currentSaved > 0 ? currentSaved : Math.min(50, Math.max(0, maxStock));
 
     setActiveRulerPacket({
       size: pkt.name,
@@ -271,6 +285,16 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
         language === 'ml'
           ? `പരമാവധി ലഭ്യമായ സ്റ്റോക്ക് ${maxStock} പാക്കറ്റുകളാണ്`
           : `Cannot add more than available stock (${maxStock} pkts)`,
+        'warning'
+      );
+      return;
+    }
+
+    if (maxStock !== undefined && maxStock <= 0 && count > 0) {
+      addToast(
+        language === 'ml'
+          ? `${size} സ്റ്റോക്കിലില്ല (Out of Stock)`
+          : `${size} is out of stock`,
         'warning'
       );
       return;
@@ -501,7 +525,7 @@ export const BatchPackingModal: React.FC<BatchPackingModalProps> = ({
                 {displayedPackets.map((pkt) => {
                   const count = quantities[pkt.name] || 0;
                   const hasCount = count > 0;
-                  const isOut = pkt.isOutOfStock;
+                  const isOut = (pkt.isOutOfStock || (pkt.availableStock !== undefined && pkt.availableStock <= 0)) && count <= 0;
 
                   return (
                     <div

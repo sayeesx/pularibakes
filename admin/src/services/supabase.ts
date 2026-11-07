@@ -907,7 +907,7 @@ export async function fetchProductionRuns(force = false): Promise<ProductionRun[
         plannedQuantity: Number(row.planned_quantity ?? row.target_quantity) || 0,
         actualQuantity: Number(row.actual_quantity) || 0,
         unit: row.unit || 'kg',
-        status: row.status as any,
+        status: (row.status || (Number(row.actual_quantity) > 0 ? 'completed' : 'in_progress')) as any,
         notes: row.notes,
         operatorName: row.operator_name || 'Staff',
         totalIngredientCost: Number(row.total_ingredient_cost) || 0,
@@ -1627,32 +1627,32 @@ export async function fetchPackagingItems(productId?: string): Promise<Packaging
 
     return (data || []).map((row: any) => ({
       id: row.id,
-      productId: row.product_id || '',
+      productId: '',
       productName: row.name || '',
-      sizeLabel: row.size_label || row.name || '',
-      sizeGrams: Number(row.size_grams) || 100,
+      sizeLabel: row.name || '',
+      sizeGrams: 100,
       currentStock: Number(row.current_stock) || 0,
-      unitCost: Number(row.unit_cost ?? row.cost_per_unit) || 0,
-      packingLabourRate: Number(row.packing_labour_rate) || 1.00,
+      unitCost: Number(row.cost_per_unit) || 0,
+      packingLabourRate: 1.00,
       isActive: row.is_active ?? true,
       createdAt: row.created_at,
-      updatedAt: row.updated_at || row.created_at,
+      updatedAt: row.created_at,
     }));
   } catch {
     return [];
   }
 }
 
-export async function savePackagingItem(item: Partial<PackagingItem> & { productId: string; sizeLabel: string }): Promise<PackagingItem> {
+export async function savePackagingItem(item: Partial<PackagingItem> & { productId?: string; sizeLabel?: string; name?: string }): Promise<PackagingItem> {
+  const packetName = (item.sizeLabel || item.name || '').trim();
   const payload = {
-    product_id: item.productId,
-    size_label: item.sizeLabel.trim(),
-    size_grams: item.sizeGrams ?? 100,
-    current_stock: item.currentStock ?? 0,
-    unit_cost: item.unitCost ?? 0,
-    packing_labour_rate: item.packingLabourRate ?? 1.00,
+    name: packetName,
+    type: 'packet',
+    unit: 'pcs',
+    current_stock: item.currentStock !== undefined ? Number(item.currentStock) : 0,
+    cost_per_unit: item.unitCost !== undefined ? Number(item.unitCost) : 0,
+    min_stock: (item as any).minStock !== undefined ? Number((item as any).minStock) : 0,
     is_active: item.isActive ?? true,
-    updated_at: new Date().toISOString(),
   };
 
   if (item.id) {
@@ -1666,14 +1666,14 @@ export async function savePackagingItem(item: Partial<PackagingItem> & { product
     if (error) throw error;
     return {
       id: data.id,
-      productId: data.product_id,
-      productName: data.products?.name || '',
-      sizeLabel: data.size_label,
-      sizeGrams: Number(data.size_grams),
-      currentStock: Number(data.current_stock),
-      unitCost: Number(data.unit_cost),
-      packingLabourRate: Number(data.packing_labour_rate),
-      isActive: data.is_active,
+      productId: '',
+      productName: data.name,
+      sizeLabel: data.name,
+      sizeGrams: 100,
+      currentStock: Number(data.current_stock) || 0,
+      unitCost: Number(data.cost_per_unit) || 0,
+      packingLabourRate: 1.0,
+      isActive: data.is_active ?? true,
     };
   } else {
     const { data, error } = await supabase
@@ -1685,14 +1685,14 @@ export async function savePackagingItem(item: Partial<PackagingItem> & { product
     if (error) throw error;
     return {
       id: data.id,
-      productId: data.product_id,
-      productName: data.products?.name || '',
-      sizeLabel: data.size_label,
-      sizeGrams: Number(data.size_grams),
-      currentStock: Number(data.current_stock),
-      unitCost: Number(data.unit_cost),
-      packingLabourRate: Number(data.packing_labour_rate),
-      isActive: data.is_active,
+      productId: '',
+      productName: data.name,
+      sizeLabel: data.name,
+      sizeGrams: 100,
+      currentStock: Number(data.current_stock) || 0,
+      unitCost: Number(data.cost_per_unit) || 0,
+      packingLabourRate: 1.0,
+      isActive: data.is_active ?? true,
     };
   }
 }
@@ -1722,7 +1722,6 @@ export async function adjustPackagingItemStock(
     .from('packaging_items')
     .update({
       current_stock: newStock,
-      updated_at: new Date().toISOString(),
     })
     .eq('id', id)
     .select('*')
@@ -2055,37 +2054,46 @@ export async function fetchDailyWages(limit = 60, force = false): Promise<any[]>
 }
 
 export async function fetchDailyWage(date: string): Promise<any | null> {
-  const { data, error } = await supabase
-    .from('daily_wages')
-    .select('*')
-    .eq('wage_date', date)
-    .limit(1)
-    .maybeSingle();
+  try {
+    const { data, error } = await supabase
+      .from('daily_wages')
+      .select('*')
+      .eq('wage_date', date)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
-  if (error) throw error;
-  if (!data) return null;
+    if (error) {
+      console.warn('Could not fetch daily wage:', error);
+      return null;
+    }
+    if (!data || data.length === 0) return null;
+    const row = data[0];
 
-  let meta: any = {};
-  if (data.notes && typeof data.notes === 'string' && data.notes.startsWith('{') && data.notes.endsWith('}')) {
-    try { meta = JSON.parse(data.notes); } catch {}
+    let meta: any = {};
+    if (row.notes && typeof row.notes === 'string' && row.notes.startsWith('{') && row.notes.endsWith('}')) {
+      try { meta = JSON.parse(row.notes); } catch {}
+    }
+
+    return {
+      id: row.id,
+      productionDate: row.wage_date || meta.production_date || date,
+      totalWageBudget: meta.total_wage_budget !== undefined ? Number(meta.total_wage_budget) : (Number(row.amount) || 0),
+      numCooks: meta.num_cooks !== undefined ? Number(meta.num_cooks) : 0,
+      numPackers: meta.num_packers !== undefined ? Number(meta.num_packers) : 0,
+      totalPacketsProduced: meta.total_packets_produced !== undefined ? Number(meta.total_packets_produced) : 0,
+      totalProductionKg: meta.total_production_kg !== undefined ? Number(meta.total_production_kg) : 0,
+      productionWageAmount: meta.production_wage_amount !== undefined ? Number(meta.production_wage_amount) : 0,
+      packingWageAmount: meta.packing_wage_amount !== undefined ? Number(meta.packing_wage_amount) : 0,
+      wagePerCook: meta.wage_per_cook !== undefined ? Number(meta.wage_per_cook) : 0,
+      wagePerPacker: meta.wage_per_packer !== undefined ? Number(meta.wage_per_packer) : 0,
+      notes: meta.notes !== undefined ? meta.notes : (row.notes || ''),
+      createdAt: row.created_at,
+      updatedAt: row.created_at,
+    };
+  } catch (e) {
+    console.warn('Error in fetchDailyWage:', e);
+    return null;
   }
-
-  return {
-    id: data.id,
-    productionDate: data.wage_date || meta.production_date,
-    totalWageBudget: meta.total_wage_budget !== undefined ? Number(meta.total_wage_budget) : (Number(data.amount) || 0),
-    numCooks: meta.num_cooks !== undefined ? Number(meta.num_cooks) : 0,
-    numPackers: meta.num_packers !== undefined ? Number(meta.num_packers) : 0,
-    totalPacketsProduced: meta.total_packets_produced !== undefined ? Number(meta.total_packets_produced) : 0,
-    totalProductionKg: meta.total_production_kg !== undefined ? Number(meta.total_production_kg) : 0,
-    productionWageAmount: meta.production_wage_amount !== undefined ? Number(meta.production_wage_amount) : 0,
-    packingWageAmount: meta.packing_wage_amount !== undefined ? Number(meta.packing_wage_amount) : 0,
-    wagePerCook: meta.wage_per_cook !== undefined ? Number(meta.wage_per_cook) : 0,
-    wagePerPacker: meta.wage_per_packer !== undefined ? Number(meta.wage_per_packer) : 0,
-    notes: meta.notes !== undefined ? meta.notes : (data.notes || ''),
-    createdAt: data.created_at,
-    updatedAt: data.created_at,
-  };
 }
 
 export async function saveDailyWage(params: {
@@ -2103,40 +2111,46 @@ export async function saveDailyWage(params: {
 }): Promise<any> {
   dbCache.invalidate('admin_daily_wages');
 
-  const { data: existing } = await supabase
-    .from('daily_wages')
-    .select('id')
-    .eq('wage_date', params.productionDate)
-    .limit(1)
-    .maybeSingle();
-
   const notesJson = JSON.stringify({
     production_date: params.productionDate,
-    total_wage_budget: params.totalWageBudget,
-    num_cooks: params.numCooks,
-    num_packers: params.numPackers,
-    total_packets_produced: params.totalPacketsProduced,
-    total_production_kg: params.totalProductionKg,
-    production_wage_amount: params.productionWageAmount,
-    packing_wage_amount: params.packingWageAmount,
-    wage_per_cook: params.wagePerCook,
-    wage_per_packer: params.wagePerPacker,
+    total_wage_budget: Number(params.totalWageBudget) || 0,
+    num_cooks: Number(params.numCooks) || 0,
+    num_packers: Number(params.numPackers) || 0,
+    total_packets_produced: Number(params.totalPacketsProduced) || 0,
+    total_production_kg: Number(params.totalProductionKg) || 0,
+    production_wage_amount: Number(params.productionWageAmount) || 0,
+    packing_wage_amount: Number(params.packingWageAmount) || 0,
+    wage_per_cook: Number(params.wagePerCook) || 0,
+    wage_per_packer: Number(params.wagePerPacker) || 0,
     notes: params.notes || '',
   });
 
+  const { data: existingRows } = await supabase
+    .from('daily_wages')
+    .select('id')
+    .eq('wage_date', params.productionDate);
+
   let resultData;
-  if (existing?.id) {
+  if (existingRows && existingRows.length > 0) {
+    const primaryId = existingRows[0].id;
     const { data, error } = await supabase
       .from('daily_wages')
       .update({
-        amount: params.totalWageBudget || 0,
+        worker_name: 'Kitchen Team',
+        category: 'other',
+        amount: Number(params.totalWageBudget) || 0,
         notes: notesJson,
       })
-      .eq('id', existing.id)
-      .select()
-      .single();
+      .eq('id', primaryId)
+      .select();
+
     if (error) throw error;
-    resultData = data;
+
+    if (existingRows.length > 1) {
+      const extraIds = existingRows.slice(1).map((r: any) => r.id);
+      await supabase.from('daily_wages').delete().in('id', extraIds);
+    }
+    resultData = data?.[0] || null;
   } else {
     const { data, error } = await supabase
       .from('daily_wages')
@@ -2144,13 +2158,13 @@ export async function saveDailyWage(params: {
         wage_date: params.productionDate,
         worker_name: 'Kitchen Team',
         category: 'other',
-        amount: params.totalWageBudget || 0,
+        amount: Number(params.totalWageBudget) || 0,
         notes: notesJson,
       })
-      .select()
-      .single();
+      .select();
+
     if (error) throw error;
-    resultData = data;
+    resultData = data?.[0] || null;
   }
 
   return resultData;
